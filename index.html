@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>巡回点検システム V3.6 (完全版)</title>
+    <title>巡回点検システム V3.7 (省略対応版)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -99,7 +99,8 @@
         </div>
         <div class="config-section">
             <label style="display:block; margin-bottom:10px; color:#ffeb3b;">📍 エリア登録（1行1項目）</label>
-            <textarea id="cfgAreas" rows="8" style="width:100%; box-sizing:border-box;" placeholder="エリア名#&#10;エリア名*"></textarea>
+            <textarea id="cfgAreas" rows="8" style="width:100%; box-sizing:border-box;" placeholder="エリア名#
+エリア名*"></textarea>
         </div>
         <button onclick="saveConfig()" class="btn btn-green" style="margin-top:10px;">✅ 設定を保存する</button>
         <button onclick="toggleConfig()" class="btn btn-gray">キャンセル</button>
@@ -192,6 +193,7 @@
         } else { isProcessing = false; }
     }
 
+    // ⬇️ セレクトボックスに「省略」を追加しました
     function renderChecklist() {
         const container = document.getElementById('checklist-container');
         const areas = JSON.parse(localStorage.getItem('myPatrolAreas')) || [];
@@ -207,11 +209,21 @@
             return `<div class="card">
                 <h4 style="margin:0 0 10px 0; color:#ffeb3b;">📍 ${area.replace('*','')}</h4>
                 <div class="row">
-                    <select onchange="updateResult('${area}','r1',this.value)"><option value="">点検1</option><option value="○" ${res.r1==='○'?'selected':''}>○ 異常なし</option><option value="×" ${res.r1==='×'?'selected':''}>× 異常あり</option></select>
+                    <select onchange="updateResult('${area}','r1',this.value)">
+                        <option value="">点検1</option>
+                        <option value="○" ${res.r1==='○'?'selected':''}>○ 異常なし</option>
+                        <option value="×" ${res.r1==='×'?'selected':''}>× 異常あり</option>
+                        <option value="省略" ${res.r1==='省略'?'selected':''}>- 省略</option>
+                    </select>
                     <input type="text" placeholder="メモ" value="${res.r1note||''}" onchange="updateResult('${area}','r1note',this.value)">
                 </div>
                 ${!isSingle ? `<div class="row">
-                    <select onchange="updateResult('${area}','r2',this.value)"><option value="">点検2</option><option value="○" ${res.r2==='○'?'selected':''}>○ 異常なし</option><option value="×" ${res.r2==='×'?'selected':''}>× 異常あり</option></select>
+                    <select onchange="updateResult('${area}','r2',this.value)">
+                        <option value="">点検2</option>
+                        <option value="○" ${res.r2==='○'?'selected':''}>○ 異常なし</option>
+                        <option value="×" ${res.r2==='×'?'selected':''}>× 異常あり</option>
+                        <option value="省略" ${res.r2==='省略'?'selected':''}>- 省略</option>
+                    </select>
                     <input type="text" placeholder="メモ" value="${res.r2note||''}" onchange="updateResult('${area}','r2note',this.value)">
                 </div>` : ''}
             </div>`;
@@ -233,7 +245,7 @@
 
         Object.keys(results).sort().forEach(key => {
             const r = results[key];
-            const mapLink = (r.lat && r.lng) ? `https://maps.google.com/?q=${r.lat},${r.lng}` : "取得なし";
+            const mapLink = (r.lat && r.lng) ? `https://www.google.com/maps?q=${r.lat},${r.lng}` : "取得なし";
             excelData.push([
                 key.replace(/[#*]/g,''),
                 r.time || "未通過",
@@ -273,12 +285,12 @@
             const name = key.replace(/[#*]/g,'');
             if(type === 'scan' && r.time) {
                 body += `■${name}\n時刻: ${r.time} / 騒音: ${r.db}dB\n`;
-                if(r.lat && r.lng) body += `位置: https://maps.google.com/?q=${r.lat},${r.lng}\n`;
+                if(r.lat && r.lng) body += `位置: https://www.google.com/maps?q=${r.lat},${r.lng}\n`;
                 body += `\n`;
             }
             else if(type === 'check' && !key.endsWith('#')) {
                 body += `■${name}\n 1回目: ${r.r1||'未'} ${r.r1note||''}\n${!key.endsWith('*')?` 2回目: ${r.r2||'未'} ${r.r2note||''}\n`:''}`;
-                if(r.lat && r.lng) body += ` (位置: https://maps.google.com/?q=${r.lat},${r.lng})\n`;
+                if(r.lat && r.lng) body += ` (位置: https://www.google.com/maps?q=${r.lat},${r.lng})\n`;
                 body += `\n`;
             }
         });
