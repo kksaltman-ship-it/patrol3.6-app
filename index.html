@@ -2,243 +2,351 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>17点検パトロールシステム (スマホ版)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>巡回点検システム V3.6 (日付・時間拡張版)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #f4f6f9;
-            margin: 0;
-            padding: 15px;
-            color: #333;
-        }
-        h1 { font-size: 1.3rem; text-align: center; color: #1a365d; }
-        .card {
-            background: #fff;
-            border-radius: 12px;
-            padding: 15px;
+        body { font-family: sans-serif; background: #1a1a1a; color: white; margin: 0; padding: 0; }
+        .page { display: none; padding: 15px; box-sizing: border-box; }
+        .page.active { display: block; }
+        
+        .sticky-nav {
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            background: #222;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 15px;
+            border-bottom: 2px solid #444;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
             margin-bottom: 15px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         }
-        .card-title {
-            font-size: 1.1rem;
-            font-weight: bold;
-            color: #2b6cb0;
-            border-bottom: 2px solid #e2e8f0;
-            padding-bottom: 5px;
-            margin-bottom: 10px;
-        }
-        button {
-            width: 100%;
-            padding: 12px;
-            font-size: 1rem;
-            font-weight: bold;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            margin-bottom: 10px;
-        }
-        .btn-primary { background-color: #3182ce; color: white; }
-        .btn-success { background-color: #38a169; color: white; font-size: 1.1rem; }
-        .btn-email { background-color: #dd6b20; color: white; font-size: 1.1rem; }
+
+        .btn { display: block; width: 100%; padding: 15px; border: none; border-radius: 12px; font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; cursor: pointer; text-align: center; color: white; text-decoration: none; box-sizing: border-box; }
+        .btn-blue { background: #007bff; }
+        .btn-orange { background: #ff9800; }
+        .btn-green { background: #28a745; }
+        .btn-purple { background: #6f42c1; }
+        .btn-gray { background: #555; }
+        .btn-small { width: auto; padding: 8px 15px; font-size: 0.9rem; margin-bottom: 0; }
+        .btn-red-outline { background: none; border: 1px solid #ff5252; color: #ff5252; }
         
-        #reader { width: 100%; background: #000; border-radius: 8px; overflow: hidden; }
-        .status-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        .status-table th, .status-table td { padding: 8px; border: 1px solid #cbd5e0; text-align: left; font-size: 0.9rem; }
-        .status-table th { background-color: #ebf8ff; }
-        
-        /* 点検入力ポップアップ風エリア */
-        #inspection-zone {
-            display: none;
-            background: #fff;
-            border: 2px solid #3182ce;
-            border-radius: 12px;
-            padding: 15px;
-            margin-top: 15px;
-        }
-        .radio-group { display: flex; gap: 15px; margin-top: 5px; }
-        .radio-group label { padding: 6px 12px; border: 1px solid #cbd5e0; border-radius: 6px; background: #f7fafc; }
-        .radio-group input:checked + label { background: #3182ce; color: white; border-color: #3182ce; }
-        .radio-group input { display: none; }
+        #reader { width: 100%; max-width: 400px; margin: 0 auto; border-radius: 12px; overflow: hidden; background: #000; border: 5px solid transparent; }
+        .db-display { font-size: 3rem; font-weight: bold; color: #ffeb3b; text-align: center; margin: 10px 0; }
+        .card { background: #333; margin-bottom: 12px; padding: 15px; border-radius: 10px; border-left: 5px solid #28a745; }
+        .row { display: flex; gap: 8px; margin-top: 8px; }
+        select, input, textarea { flex: 1; padding: 12px; border-radius: 8px; border: none; font-size: 1rem; }
+        .log-container { background: #222; border-radius: 10px; padding: 10px; margin-top: 20px; font-size: 0.85rem; border: 1px solid #444; }
+        .log-entry { color: #4caf50; border-bottom: 1px solid #333; padding: 8px 0; font-weight: bold; }
+        .scan-msg { background: #4caf50; color: white; padding: 10px; border-radius: 8px; margin-bottom: 10px; text-align: center; animation: fadeOut 3s forwards; }
+        @keyframes fadeOut { 0% {opacity: 1;} 80% {opacity: 1;} 100% {opacity: 0;} }
+        #config-ui { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:9999; padding:20px; box-sizing:border-box; overflow-y: auto; }
+        .config-section { background: #222; padding: 15px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #444; }
     </style>
 </head>
 <body>
 
-    <h1>17ポイント巡回パトロール</h1>
-
-    <div class="card">
-        <div class="card-title">① エリアスキャン</div>
-        <button class="btn-primary" onclick="startScan()">カメラを起動してQRを読み取る</button>
-        <div id="reader" style="display:none;"></div>
+    <div id="setup-page" class="page active" style="text-align:center; padding-top:50px;">
+        <h2>巡回点検システム</h2>
+        <p style="color:#aaa;">電波のある場所、位置情報が許可された環境で起動してください</p>
+        <button onclick="startApp()" class="btn btn-blue">システムを起動する</button>
     </div>
 
-    <div id="inspection-zone">
-        <h3 id="active-area-name" style="margin-top:0; color:#2b6cb0;"></h3>
-        <p>状況を選択してください：</p>
-        <div class="radio-group">
-            <input type="radio" id="status-ok" name="current-status" value="○" checked>
-            <label for="status-ok">○ 正常</label>
-            <input type="radio" id="status-ng" name="current-status" value="×">
-            <label for="status-ng">× 異常</label>
+    <div id="scan-page" class="page">
+        <h3 style="text-align:center; margin-top:0;">📷 打刻スキャン</h3>
+        <div id="reader"></div>
+        <div class="db-display" id="db-live">-- dB</div>
+        <div style="background:#333; padding:10px; border-radius:10px; margin-bottom:15px;">
+            <p style="font-size:0.7rem; color:#ccc; margin:0 0 5px 0;">手動打刻（#のエリアのみ）</p>
+            <div style="display:flex; gap:5px;">
+                <select id="manualAreaSelect"></select>
+                <button onclick="manualLog()" style="padding:10px; background: #666; color:white; border:none; border-radius:5px; width:80px;">打刻</button>
+            </div>
         </div>
-        <button class="btn-primary" style="margin-top:15px; background-color:#4a5568;" onclick="saveCurrentPoint()">このポイントを記録</button>
+        <button onclick="showPage('check-page')" class="btn btn-green">📋 点検リスト入力へ</button>
+        <button onclick="downloadExcel()" class="btn btn-purple">📊 Excelファイルを保存</button>
+        <button onclick="sendReport('scan')" class="btn btn-orange">📤 メールで結果を報告</button>
+        <div class="log-container">
+            <div id="scan-status"></div>
+            <div id="statusLog"></div>
+        </div>
+        <button onclick="toggleConfig()" style="margin-top:20px; width:100%; background:none; border:none; color:#555; font-size:0.8rem;">⚙ 設定</button>
     </div>
 
-    <div class="card">
-        <div class="card-title">② 巡回進捗・結果一覧</div>
-        <table class="status-table">
-            <thead>
-                <tr>
-                    <th>No</th>
-                    <th>点検エリア場所</th>
-                    <th>結果</th>
-                    <th>点検日時</th>
-                </tr>
-            </thead>
-            <tbody id="progress-list">
-                </tbody>
-        </table>
+    <div id="check-page" class="page" style="padding:0;">
+        <div class="sticky-nav">
+            <button onclick="showPage('scan-page')" class="btn btn-gray btn-small">⬅ 戻る</button>
+            <h3 style="margin:0;">📋 点検リスト</h3>
+            <div style="width:60px;"></div>
+        </div>
+        <div style="padding:15px;">
+            <div id="checklist-container"></div>
+            <button onclick="downloadExcel()" class="btn btn-purple" style="margin-top:20px;">📊 Excelファイルを保存</button>
+            <button onclick="sendReport('check')" class="btn btn-orange">📤 メールで結果を報告</button>
+            <button onclick="clearData()" class="btn btn-red-outline" style="margin-top:30px;">🔄 本日の全データをリセット</button>
+        </div>
     </div>
 
-    <button class="btn-success" onclick="downloadExcel()">点検データをExcel保存</button>
-    <button class="btn-email" onclick="sendEmailReport()">総務へメール報告画面を開く</button>
+    <div id="config-ui">
+        <h3>⚙ システム設定</h3>
+        <div class="config-section">
+            <label style="display:block; margin-bottom:10px; color:#ffeb3b;">📬 報告メール送信先</label>
+            <input type="email" id="cfgEmail" style="width:100%; box-sizing:border-box;" placeholder="example@mail.com">
+        </div>
+        <div class="config-section">
+            <label style="display:block; margin-bottom:10px; color:#ffeb3b;">📍 エリア登録（1行1項目）</label>
+            <textarea id="cfgAreas" rows="8" style="width:100%; box-sizing:border-box;" placeholder="エリア名#
+エリア名*"></textarea>
+        </div>
+        <button onclick="saveConfig()" class="btn btn-green" style="margin-top:10px;">✅ 設定を保存する</button>
+        <button onclick="toggleConfig()" class="btn btn-gray">キャンセル</button>
+    </div>
 
-    <script>
-        // 17ポイントのエリア定義（現場の実際の名称に合わせて書き換え可能です）
-        const totalPoints = 17;
-        let patrolData = [];
-        
-        // データの初期化（17箇所分の空枠を作る）
-        for (let i = 1; i <= totalPoints; i++) {
-            patrolData.push({
-                no: i,
-                areaName: `点検エリア第 ${i} ポイント`,
-                result: "未巡回",
-                timestamp: "-"
-            });
+<script>
+    let audioContext, analyser, currentDb = 0, html5QrCode;
+    let isProcessing = false;
+
+    function showPage(pageId) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById(pageId).classList.add('active');
+        if(pageId === 'check-page') renderChecklist();
+        window.scrollTo(0,0);
+    }
+
+    async function startApp() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            audioContext.createMediaStreamSource(stream).connect(analyser);
+            updateDb();
+            showPage('scan-page');
+            html5QrCode = new Html5Qrcode("reader");
+            await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => { doLog(txt); });
+            setupManualSelect();
+            refreshLogDisplay();
+        } catch (err) {
+            alert("カメラ・マイク・位置情報の使用を許可してください。");
         }
+    }
 
-        let currentActiveNo = null;
-        let html5QrcodeScanner;
+    function updateDb() {
+        if (!analyser) return;
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(data);
+        currentDb = Math.round((Math.max(...data) / 255) * 70 + 30);
+        document.getElementById('db-live').innerText = currentDb + " dB";
+        requestAnimationFrame(updateDb);
+    }
 
-        // 進捗一覧表を画面に描画
-        function renderTable() {
-            const tbody = document.getElementById('progress-list');
-            tbody.innerHTML = "";
-            patrolData.forEach(item => {
-                tbody.innerHTML += `
-                    <tr>
-                        <td>${item.no}</td>
-                        <td>${item.areaName}</td>
-                        <td style="font-weight:bold; color:${item.result === '○' ? 'green' : (item.result === '×' ? 'red' : '#718096')}">${item.result}</td>
-                        <td>${item.timestamp}</td>
-                    </tr>
-                `;
-            });
-        }
-        renderTable();
-
-        // 現在の日付＋時間を「2026/06/16 13:45」の形で取得する共通関数
-        function getFormattedDateTime() {
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const date = String(now.getDate()).padStart(2, '0');
-            const hours = String(now.getHours()).padStart(2, '0');
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            return `${year}/${month}/${date} ${hours}:${minutes}`;
-        }
-
-        // カメラ起動
-        function startScan() {
-            document.getElementById('reader').style.display = 'block';
-            html5QrcodeScanner = new Html5Qrcode("reader");
-            html5QrcodeScanner.start(
-                { facingMode: "environment" },
-                { fps: 10, qrbox: 250 },
-                (decodedText) => {
-                    // QRコードの文字（例: "7" または "点検エリア第 7 ポイント"）から該当Noを判定
-                    let matchedNo = parseInt(decodedText.replace(/[^0-9]/g, ''));
-                    if (matchedNo >= 1 && matchedNo <= totalPoints) {
-                        currentActiveNo = matchedNo;
-                        document.getElementById('active-area-name').innerText = `【No.${matchedNo}】 ${patrolData[matchedNo-1].areaName}`;
-                        document.getElementById('inspection-zone').style.display = 'block';
-                    } else {
-                        alert("1〜17の有効な点検QRコードではありません。");
-                    }
-                    html5QrcodeScanner.stop();
-                    document.getElementById('reader').style.display = 'none';
+    function getGPSPosition() {
+        return new Promise((resolve) => {
+            if (!navigator.geolocation) {
+                resolve({ lat: null, lng: null });
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    resolve({ lat: position.coords.latitude, lng: position.coords.longitude });
                 },
-                (err) => {}
-            ).catch(err => alert("カメラ起動に失敗しました。"));
+                (error) => {
+                    console.error("GPS取得失敗:", error);
+                    resolve({ lat: null, lng: null });
+                },
+                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            );
+        });
+    }
+
+    // 【追加】「年/月/日 時:分:秒」を生成するヘルパー関数
+    function getNowDateTimeString() {
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = d.getMonth() + 1;
+        const date = d.getDate();
+        const h = String(d.getHours()).padStart(2, '0');
+        const m = String(d.getMinutes()).padStart(2, '0');
+        const s = String(d.getSeconds()).padStart(2, '0');
+        return `${year}/${month}/${date} ${h}:${m}:${s}`;
+    }
+
+    async function doLog(txt, isManual = false) {
+        if (isProcessing && !isManual) return;
+        isProcessing = true;
+
+        const statusDiv = document.getElementById('scan-status');
+        if(!isManual) {
+            document.getElementById('reader').style.border = "5px solid #ff9800";
+            statusDiv.innerHTML = `<div class="scan-msg" style="background:#ff9800;">🛰️ 位置情報を取得中...</div>`;
         }
 
-        // その場での点検結果の保存
-        function saveCurrentPoint() {
-            if (currentActiveNo === null) return;
-            
-            const selectedStatus = document.querySelector('input[name="current-status"]:checked').value;
-            
-            // 【修正】ここで「日付＋時間」を格納する
-            patrolData[currentActiveNo - 1].result = selectedStatus;
-            patrolData[currentActiveNo - 1].timestamp = getFormattedDateTime();
-            
-            document.getElementById('inspection-zone').style.display = 'none';
-            currentActiveNo = null;
-            renderTable();
-            alert("ポイントの記録を保存しました。");
-        }
+        const coords = await getGPSPosition();
+        
+        // 【修正】時間単体から「日付＋時間」に変更
+        const currentFullTime = getNowDateTimeString(); 
+        
+        let data = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
+        if (!data[txt]) data[txt] = { r1: "", r1note: "", r2: "", r2note: "" };
+        
+        data[txt].time = currentFullTime + (isManual ? "(手)" : "");
+        data[txt].db = currentDb;
+        data[txt].lat = coords.lat;
+        data[txt].lng = coords.lng;
+        
+        localStorage.setItem('myPatrolResults', JSON.stringify(data));
+        refreshLogDisplay();
+        
+        if(!isManual) {
+            document.getElementById('reader').style.border = "5px solid #4caf50";
+            statusDiv.innerHTML = `<div class="scan-msg">✨ ${txt.replace(/[#*]/g,'')} を記録</div>`;
+            setTimeout(() => { isProcessing = false; document.getElementById('reader').style.border = "5px solid transparent"; }, 3000);
+        } else { isProcessing = false; }
+    }
 
-        // --- 【修正】Excel(CSV)保存処理（日付＋時間対応） ---
-        function downloadExcel() {
-            const currentDateTime = getFormattedDateTime();
-            const headers = ["No", "点検エリア場所", "結果", "点検日時"];
-            
-            let csvRows = ["\uFEFF" + headers.join(",")]; // 文字化け防止BOM付き
-            
-            patrolData.forEach(item => {
-                csvRows.push([
-                    item.no,
-                    `"${item.areaName}"`,
-                    `"${item.result}"`,
-                    `"${item.timestamp}"` // ここに「日付＋時間」が入る
-                ].join(","));
-            });
-
-            const csvContent = csvRows.join("\n");
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            const url = URL.createObjectURL(blob);
-            
-            // ファイル名用のスタンプ
-            const fileStamp = currentDateTime.replace(/[\/\s:]/g, "");
-            link.setAttribute("href", url);
-            link.setAttribute("download", `巡回報告_${fileStamp}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+    function renderChecklist() {
+        const container = document.getElementById('checklist-container');
+        const areas = JSON.parse(localStorage.getItem('myPatrolAreas')) || [];
+        const results = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
+        const targets = areas.filter(a => !a.endsWith('#'));
+        if(targets.length === 0) {
+            container.innerHTML = "<p style='color:#888; text-align:center;'>設定から点検エリアを登録してください</p>";
+            return;
         }
+        container.innerHTML = targets.map(area => {
+            const res = results[area] || { r1: "", r1note: "", r2: "", r2note: "" };
+            const isSingle = area.endsWith('*');
+            return `<div class="card">
+                <h4 style="margin:0 0 10px 0; color:#ffeb3b;">📍 ${area.replace('*','')}</h4>
+                <div class="row">
+                    <select onchange="updateResult('${area}','r1',this.value)"><option value="">点検1</option><option value="○" ${res.r1==='○'?'selected':''}>○ 異常なし</option><option value="×" ${res.r1==='×'?'selected':''}>× 異常あり</option></select>
+                    <input type="text" placeholder="メモ" value="${res.r1note||''}" onchange="updateResult('${area}','r1note',this.value)">
+                </div>
+                ${!isSingle ? `<div class="row">
+                    <select onchange="updateResult('${area}','r2',this.value)"><option value="">点検2</option><option value="○" ${res.r2==='○'?'selected':''}>○ 異常なし</option><option value="×" ${res.r2==='×'?'selected':''}>× 異常あり</option></select>
+                    <input type="text" placeholder="メモ" value="${res.r2note||''}" onchange="updateResult('${area}','r2note',this.value)">
+                </div>` : ''}
+            </div>`;
+        }).join('');
+    }
 
-        // --- 【修正】メール送信処理（本文に日付＋時間を反映） ---
-        function sendEmailReport() {
-            const currentDateTime = getFormattedDateTime();
-            const emailTo = "soumu@example.com"; // 総務（General Affairs）の実際のアドレスに変えてください
-            const subject = encodeURIComponent(`【巡回パトロール報告】_${currentDateTime}`);
-            
-            // メール本文の作成
-            let bodyText = `総務担当者様\n\nお疲れ様です。巡回パトロールが完了しました。\n点検日時は ${currentDateTime} です。\n\n【点検結果一覧】\n`;
-            
-            patrolData.forEach(item => {
-                bodyText += `No.${item.no} / ${item.areaName} / 結果: [ ${item.result} ] (確認時間: ${item.timestamp})\n`;
-            });
-            
-            bodyText += `\n以上です。よろしくお願いいたします。`;
-            const body = encodeURIComponent(bodyText);
-            
-            // メールアプリ（またはOutlook、Gmail等）を強制起動
-            window.location.href = `mailto:${emailTo}?subject=${subject}&body=${body}`;
-        }
-    </script>
+    function updateResult(area, field, val) {
+        let d = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
+        if (!d[area]) d[area] = { r1: "", r1note: "", r2: "", r2note: "" };
+        d[area][field] = val;
+        localStorage.setItem('myPatrolResults', JSON.stringify(d));
+    }
+
+    function downloadExcel() {
+        const results = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
+        if (Object.keys(results).length === 0) { alert("保存するデータがありません"); return; }
+
+        const excelData = [[ "エリア名", "打刻時刻", "騒音(dB)", "緯度", "経度", "点検1結果", "点検1メモ", "点検2結果", "点検2メモ", "GoogleMapリンク" ]];
+
+        Object.keys(results).sort().forEach(key => {
+            const r = results[key];
+            // 【バグ修正】テンプレートリテラルのクォーテーション閉じミスを修正
+            const mapLink = (r.lat && r.lng) ? `https://maps.google.com/?q=${r.lat},${r.lng}` : "取得なし";
+            excelData.push([
+                key.replace(/[#*]/g,''),
+                r.time || "未通過", // 【連動】ここにも自動で日付＋時間が格納されます
+                r.db ? r.db + " dB" : "",
+                r.lat || "",
+                r.lng || "",
+                r.r1 || "",
+                r.r1note || "",
+                r.r2 || "",
+                r.r2note || "",
+                mapLink
+            ]);
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(excelData);
+        XLSX.utils.book_append_sheet(wb, ws, "巡回点検結果");
+        
+        const today = new Date();
+        const dateStr = `${today.getFullYear()}-${today.getMonth()+1}-${today.getDate()}`;
+        XLSX.writeFile(wb, `巡回報告_${dateStr}.xlsx`);
+    }
+
+    function sendReport(type) {
+        const results = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
+        if (Object.keys(results).length === 0) { alert("報告するデータがありません"); return; }
+
+        const isNormal = confirm("【最終確認】\n全体を通して「異常なし」で報告しますか？\n（[キャンセル]を押すと「異常あり」として報告します）");
+        const summaryStatus = isNormal ? "【巡回結果：異常なし】" : "【巡回結果：★異常あり★】";
+
+        const mailTo = localStorage.getItem('myPatrolEmail') || "";
+        
+        // 【修正】件名と本文の冒頭に報告時の「日付＋時間」を明記
+        const reportTime = getNowDateTimeString();
+        let body = `${summaryStatus}\n報告日時: ${reportTime}\n\n※Excelファイルを出力した場合は、このメールに添付して送信してください。\n\n`;
+        body += type === 'scan' ? "＜巡回打刻履歴＞\n\n" : "＜巡回点検詳細＞\n\n";
+
+        Object.keys(results).sort().forEach(key => {
+            const r = results[key];
+            const name = key.replace(/[#*]/g,'');
+            if(type === 'scan' && r.time) {
+                body += `■${name}\n時刻: ${r.time} / 騒音: ${r.db}dB\n`;
+                if(r.lat && r.lng) body += `位置: https://maps.google.com/?q=${r.lat},${r.lng}\n`;
+                body += `\n`;
+            }
+            else if(type === 'check' && !key.endsWith('#')) {
+                // 【修正】詳細確認側でも、保存された日付＋時間がそのまま反映されます
+                body += `■${name} (${r.time || '未通過'})\n 1回目: ${r.r1||'未'} ${r.r1note||''}\n${!key.endsWith('*')?` 2回目: ${r.r2||'未'} ${r.r2note||''}\n`:''}`;
+                if(r.lat && r.lng) body += ` (位置: https://maps.google.com/?q=${r.lat},${r.lng})\n`;
+                body += `\n`;
+            }
+        });
+
+        // 【修正】件名の後ろにも日付を自動付与して判別しやすく
+        const mailSubject = `${summaryStatus} 巡回点検報告 (${reportTime})`;
+        location.href = `mailto:${mailTo}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(body)}`;
+    }
+
+    function clearData() { if(confirm("全データをリセットしますか？")) { localStorage.removeItem('myPatrolResults'); location.reload(); } }
+    
+    function refreshLogDisplay() {
+        const logDiv = document.getElementById('statusLog');
+        const data = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
+        let html = "";
+        Object.keys(data).filter(k => data[k].time).sort((a,b) => (data[b].time > data[a].time ? 1 : -1)).forEach(name => {
+            html += `<div class="log-entry">✅ ${name.replace(/[#*]/g,'')} (${data[name].time})</div>`;
+        });
+        logDiv.innerHTML = html;
+    }
+
+    function setupManualSelect() {
+        const sel = document.getElementById('manualAreaSelect');
+        const areas = JSON.parse(localStorage.getItem('myPatrolAreas')) || [];
+        const targets = areas.filter(a => a.endsWith('#'));
+        sel.innerHTML = targets.map(a => `<option value="${a}">${a.replace('#','')}</option>`).join('');
+    }
+
+    function manualLog() {
+        const val = document.getElementById('manualAreaSelect').value;
+        if(val) doLog(val, true);
+    }
+
+    function toggleConfig() {
+        const ui = document.getElementById('config-ui');
+        if(ui.style.display==='none' || !ui.style.display){
+            document.getElementById('cfgAreas').value = localStorage.getItem('myPatrolAreas') ? JSON.parse(localStorage.getItem('myPatrolAreas')).join('\n') : "";
+            document.getElementById('cfgEmail').value = localStorage.getItem('myPatrolEmail') || "";
+            ui.style.display='block';
+        } else { ui.style.display='none'; }
+    }
+
+    function saveConfig() {
+        localStorage.setItem('myPatrolEmail', document.getElementById('cfgEmail').value);
+        localStorage.setItem('myPatrolAreas', JSON.stringify(document.getElementById('cfgAreas').value.split('\n').map(a => a.trim()).filter(a => a)));
+        alert("設定を保存しました");
+        location.reload();
+    }
+</script>
 </body>
 </html>
