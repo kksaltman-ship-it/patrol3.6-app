@@ -3,22 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>デジタル巡回点検システム (スマホ版)</title>
+    <title>17点検パトロールシステム (スマホ版)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background-color: #f4f6f9;
             margin: 0;
             padding: 15px;
             color: #333;
         }
-        h1 {
-            font-size: 1.4rem;
-            text-align: center;
-            color: #1a365d;
-            margin-bottom: 20px;
-        }
+        h1 { font-size: 1.3rem; text-align: center; color: #1a365d; }
         .card {
             background: #fff;
             border-radius: 12px;
@@ -29,10 +24,10 @@
         .card-title {
             font-size: 1.1rem;
             font-weight: bold;
-            margin-bottom: 10px;
             color: #2b6cb0;
             border-bottom: 2px solid #e2e8f0;
             padding-bottom: 5px;
+            margin-bottom: 10px;
         }
         button {
             width: 100%;
@@ -43,207 +38,206 @@
             border-radius: 8px;
             cursor: pointer;
             margin-bottom: 10px;
-            transition: background 0.2s;
         }
         .btn-primary { background-color: #3182ce; color: white; }
-        .btn-primary:active { background-color: #2b6cb0; }
-        .btn-success { background-color: #38a169; color: white; margin-top: 15px; font-size: 1.1rem; }
-        .btn-success:active { background-color: #2f855a; }
+        .btn-success { background-color: #38a169; color: white; font-size: 1.1rem; }
+        .btn-email { background-color: #dd6b20; color: white; font-size: 1.1rem; }
         
-        #reader {
-            width: 100%;
-            background: #000;
-            border-radius: 8px;
-            overflow: hidden;
+        #reader { width: 100%; background: #000; border-radius: 8px; overflow: hidden; }
+        .status-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .status-table th, .status-table td { padding: 8px; border: 1px solid #cbd5e0; text-align: left; font-size: 0.9rem; }
+        .status-table th { background-color: #ebf8ff; }
+        
+        /* 点検入力ポップアップ風エリア */
+        #inspection-zone {
+            display: none;
+            background: #fff;
+            border: 2px solid #3182ce;
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 15px;
         }
-        .result-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 0;
-            border-bottom: 1px solid #edf2f7;
-        }
-        .result-label { font-weight: bold; }
-        .radio-group {
-            display: flex;
-            gap: 15px;
-        }
-        .radio-group label {
-            padding: 6px 12px;
-            border: 1px solid #cbd5e0;
-            border-radius: 6px;
-            background: #f7fafc;
-        }
-        .radio-group input:checked + label {
-            background: #3182ce;
-            color: white;
-            border-color: #3182ce;
-        }
+        .radio-group { display: flex; gap: 15px; margin-top: 5px; }
+        .radio-group label { padding: 6px 12px; border: 1px solid #cbd5e0; border-radius: 6px; background: #f7fafc; }
+        .radio-group input:checked + label { background: #3182ce; color: white; border-color: #3182ce; }
         .radio-group input { display: none; }
-        #noise-display {
-            font-size: 1.5rem;
-            text-align: center;
-            font-weight: bold;
-            color: #e53e3e;
-            margin: 10px 0;
-        }
     </style>
 </head>
 <body>
 
-    <h1>巡回点検システム (スマホ用)</h1>
+    <h1>17ポイント巡回パトロール</h1>
 
     <div class="card">
-        <div class="card-title">① エリアQRコード読み取り</div>
-        <button class="btn-primary" onclick="startScan()">カメラを起動してスキャン</button>
+        <div class="card-title">① エリアスキャン</div>
+        <button class="btn-primary" onclick="startScan()">カメラを起動してQRを読み取る</button>
         <div id="reader" style="display:none;"></div>
-        <div class="result-row" style="margin-top:10px;">
-            <span>現在のエリア:</span>
-            <span id="current-area" style="font-weight:bold; color:#e53e3e;">未スキャン</span>
+    </div>
+
+    <div id="inspection-zone">
+        <h3 id="active-area-name" style="margin-top:0; color:#2b6cb0;"></h3>
+        <p>状況を選択してください：</p>
+        <div class="radio-group">
+            <input type="radio" id="status-ok" name="current-status" value="○" checked>
+            <label for="status-ok">○ 正常</label>
+            <input type="radio" id="status-ng" name="current-status" value="×">
+            <label for="status-ng">× 異常</label>
         </div>
+        <button class="btn-primary" style="margin-top:15px; background-color:#4a5568;" onclick="saveCurrentPoint()">このポイントを記録</button>
     </div>
 
     <div class="card">
-        <div class="card-title">② 点検確認</div>
-        
-        <div class="result-row">
-            <span class="result-label">1. 設備・照明状態</span>
-            <div class="radio-group">
-                <input type="radio" id="q1-ok" name="q1" value="○" checked><label for="q1-ok">○ 正常</label>
-                <input type="radio" id="q1-ng" name="q1" value="×"><label for="q1-ng">× 異常</label>
-            </div>
-        </div>
-
-        <div class="result-row">
-            <span class="result-label">2. 火気・安全確認</span>
-            <div class="radio-group">
-                <input type="radio" id="q2-ok" name="q2" value="○" checked><label for="q2-ok">○ 正常</label>
-                <input type="radio" id="q2-ng" name="q2" value="×"><label for="q2-ng">× 異常</label>
-            </div>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-title">③ 騒音・異音計測 (マイク)</div>
-        <button class="btn-primary" onclick="startNoiseMeasurement()">計測スタート (5秒間)</button>
-        <div id="noise-display">0.0 dB</div>
-        <div style="font-size:0.8rem; color:#718096; text-align:center;">※計測中の最大音量を記録します</div>
+        <div class="card-title">② 巡回進捗・結果一覧</div>
+        <table class="status-table">
+            <thead>
+                <tr>
+                    <th>No</th>
+                    <th>点検エリア場所</th>
+                    <th>結果</th>
+                    <th>点検日時</th>
+                </tr>
+            </thead>
+            <tbody id="progress-list">
+                </tbody>
+        </table>
     </div>
 
     <button class="btn-success" onclick="downloadExcel()">点検データをExcel保存</button>
+    <button class="btn-email" onclick="sendEmailReport()">総務へメール報告画面を開く</button>
 
     <script>
-        let scannedArea = "未登録";
-        let maxVolume = 0;
-        let html5QrcodeScanner;
-
-        // --- QRコードスキャン処理 ---
-        function startScan() {
-            document.getElementById('reader').style.display = 'block';
-            html5QrcodeScanner = new Html5Qrcode("reader");
-            html5QrcodeScanner.start(
-                { facingMode: "environment" }, // 背面カメラを使用
-                { fps: 10, qrbox: 250 },
-                (decodedText) => {
-                    scannedArea = decodedText;
-                    document.getElementById('current-area').innerText = decodedText;
-                    html5QrcodeScanner.stop();
-                    document.getElementById('reader').style.display = 'none';
-                },
-                (errorMessage) => { /* スキャン中のエラーは無視 */ }
-            ).catch(err => {
-                alert("カメラの起動に失敗しました。ブラウザの許可設定を確認してください。");
+        // 17ポイントのエリア定義（現場の実際の名称に合わせて書き換え可能です）
+        const totalPoints = 17;
+        let patrolData = [];
+        
+        // データの初期化（17箇所分の空枠を作る）
+        for (let i = 1; i <= totalPoints; i++) {
+            patrolData.push({
+                no: i,
+                areaName: `点検エリア第 ${i} ポイント`,
+                result: "未巡回",
+                timestamp: "-"
             });
         }
 
-        // --- マイク騒音計測処理（簡易版ボリュームメーター） ---
-        async function startNoiseMeasurement() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const analyser = audioContext.createAnalyser();
-                const microphone = audioContext.createMediaStreamSource(stream);
-                const javascriptNode = audioContext.createScriptProcessor(2048, 1, 1);
+        let currentActiveNo = null;
+        let html5QrcodeScanner;
 
-                analyser.smoothingTimeConstant = 0.8;
-                analyser.fftSize = 1024;
-
-                microphone.connect(analyser);
-                analyser.connect(javascriptNode);
-                javascriptNode.connect(audioContext.destination);
-
-                maxVolume = 0;
-                let startTime = Date.now();
-
-                javascriptNode.onaudioprocess = function() {
-                    const array = new Uint8Array(analyser.frequencyBinCount);
-                    analyser.getByteFrequencyData(array);
-                    let values = 0;
-                    for (let i = 0; i < array.length; i++) { values += array[i]; }
-                    let average = values / array.length;
-                    
-                    // 簡易的なdB換算処理
-                    let currentDb = Math.round(average * 1.5); 
-                    if (currentDb > maxVolume) {
-                        maxVolume = currentDb;
-                        document.getElementById('noise-display').innerText = maxVolume + " dB";
-                    }
-
-                    // 5秒経過したら自動停止
-                    if (Date.now() - startTime > 5000) {
-                        stream.getTracks().forEach(track => track.stop());
-                        javascriptNode.onaudioprocess = null;
-                        alert("計測が完了しました！ 最大音量: " + maxVolume + " dB");
-                    }
-                };
-            } catch (err) {
-                alert("マイクの起動に失敗しました。ブラウザの許可設定を確認してください。");
-            }
+        // 進捗一覧表を画面に描画
+        function renderTable() {
+            const tbody = document.getElementById('progress-list');
+            tbody.innerHTML = "";
+            patrolData.forEach(item => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${item.no}</td>
+                        <td>${item.areaName}</td>
+                        <td style="font-weight:bold; color:${item.result === '○' ? 'green' : (item.result === '×' ? 'red' : '#718096')}">${item.result}</td>
+                        <td>${item.timestamp}</td>
+                    </tr>
+                `;
+            });
         }
+        renderTable();
 
-        // --- 【今回の修正箇所】Excel(CSV)ダウンロード処理 ---
-        function downloadExcel() {
-            // 1. スマホの現在時刻から「日付」と「時間」を正確に取得
+        // 現在の日付＋時間を「2026/06/16 13:45」の形で取得する共通関数
+        function getFormattedDateTime() {
             const now = new Date();
             const year = now.getFullYear();
             const month = String(now.getMonth() + 1).padStart(2, '0');
             const date = String(now.getDate()).padStart(2, '0');
             const hours = String(now.getHours()).padStart(2, '0');
             const minutes = String(now.getMinutes()).padStart(2, '0');
+            return `${year}/${month}/${date} ${hours}:${minutes}`;
+        }
 
-            // 「2026/06/16 13:45」の形を作成
-            const fullTimestamp = `${year}/${month}/${date} ${hours}:${minutes}`;
+        // カメラ起動
+        function startScan() {
+            document.getElementById('reader').style.display = 'block';
+            html5QrcodeScanner = new Html5Qrcode("reader");
+            html5QrcodeScanner.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: 250 },
+                (decodedText) => {
+                    // QRコードの文字（例: "7" または "点検エリア第 7 ポイント"）から該当Noを判定
+                    let matchedNo = parseInt(decodedText.replace(/[^0-9]/g, ''));
+                    if (matchedNo >= 1 && matchedNo <= totalPoints) {
+                        currentActiveNo = matchedNo;
+                        document.getElementById('active-area-name').innerText = `【No.${matchedNo}】 ${patrolData[matchedNo-1].areaName}`;
+                        document.getElementById('inspection-zone').style.display = 'block';
+                    } else {
+                        alert("1〜17の有効な点検QRコードではありません。");
+                    }
+                    html5QrcodeScanner.stop();
+                    document.getElementById('reader').style.display = 'none';
+                },
+                (err) => {}
+            ).catch(err => alert("カメラ起動に失敗しました。"));
+        }
 
-            // 2. 点検結果の取得
-            const q1Result = document.querySelector('input[name="q1"]:checked').value;
-            const q2Result = document.querySelector('input[name="q2"]:checked').value;
+        // その場での点検結果の保存
+        function saveCurrentPoint() {
+            if (currentActiveNo === null) return;
+            
+            const selectedStatus = document.querySelector('input[name="current-status"]:checked').value;
+            
+            // 【修正】ここで「日付＋時間」を格納する
+            patrolData[currentActiveNo - 1].result = selectedStatus;
+            patrolData[currentActiveNo - 1].timestamp = getFormattedDateTime();
+            
+            document.getElementById('inspection-zone').style.display = 'none';
+            currentActiveNo = null;
+            renderTable();
+            alert("ポイントの記録を保存しました。");
+        }
 
-            // 3. CSVデータの作成（Excelが1セルとして認識するようダブルクォーテーションで囲む）
-            // 列構成：点検日時, エリア名, 設備・照明, 火気・安全, 騒音値(dB)
-            const headers = ["点検日時", "エリア名", "設備・照明", "火気・安全", "騒音値(dB)"];
-            const rowData = [
-                `"${fullTimestamp}"`, 
-                `"${scannedArea}"`, 
-                `"${q1Result}"`, 
-                `"${q2Result}"`, 
-                `"${maxVolume}"`
-            ];
+        // --- 【修正】Excel(CSV)保存処理（日付＋時間対応） ---
+        function downloadExcel() {
+            const currentDateTime = getFormattedDateTime();
+            const headers = ["No", "点検エリア場所", "結果", "点検日時"];
+            
+            let csvRows = ["\uFEFF" + headers.join(",")]; // 文字化け防止BOM付き
+            
+            patrolData.forEach(item => {
+                csvRows.push([
+                    item.no,
+                    `"${item.areaName}"`,
+                    `"${item.result}"`,
+                    `"${item.timestamp}"` // ここに「日付＋時間」が入る
+                ].join(","));
+            });
 
-            // Excelの文字化けを防ぐための「BOM（\uFEFF）」を追加
-            const csvContent = "\uFEFF" + headers.join(",") + "\n" + rowData.join(",");
-
-            // 4. ファイルのダウンロード処理
+            const csvContent = csvRows.join("\n");
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement("a");
             const url = URL.createObjectURL(blob);
             
-            // ファイル名にも日付を付与（例: 巡回結果_20260616_1345.csv）
+            // ファイル名用のスタンプ
+            const fileStamp = currentDateTime.replace(/[\/\s:]/g, "");
             link.setAttribute("href", url);
-            link.setAttribute("download", `巡回結果_${year}${month}${date}_${hours}${minutes}.csv`);
-            link.style.visibility = 'hidden';
+            link.setAttribute("download", `巡回報告_${fileStamp}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        }
+
+        // --- 【修正】メール送信処理（本文に日付＋時間を反映） ---
+        function sendEmailReport() {
+            const currentDateTime = getFormattedDateTime();
+            const emailTo = "soumu@example.com"; // 総務（General Affairs）の実際のアドレスに変えてください
+            const subject = encodeURIComponent(`【巡回パトロール報告】_${currentDateTime}`);
+            
+            // メール本文の作成
+            let bodyText = `総務担当者様\n\nお疲れ様です。巡回パトロールが完了しました。\n点検日時は ${currentDateTime} です。\n\n【点検結果一覧】\n`;
+            
+            patrolData.forEach(item => {
+                bodyText += `No.${item.no} / ${item.areaName} / 結果: [ ${item.result} ] (確認時間: ${item.timestamp})\n`;
+            });
+            
+            bodyText += `\n以上です。よろしくお願いいたします。`;
+            const body = encodeURIComponent(bodyText);
+            
+            // メールアプリ（またはOutlook、Gmail等）を強制起動
+            window.location.href = `mailto:${emailTo}?subject=${subject}&body=${body}`;
         }
     </script>
 </body>
