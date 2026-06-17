@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>巡回点検システム V3.6 (完全版・省略対応)</title>
+    <title>巡回点検システム V3.7 (担当者名・日付拡張版)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -40,6 +40,7 @@
         .card { background: #333; margin-bottom: 12px; padding: 15px; border-radius: 10px; border-left: 5px solid #28a745; }
         .row { display: flex; gap: 8px; margin-top: 8px; }
         select, input, textarea { flex: 1; padding: 12px; border-radius: 8px; border: none; font-size: 1rem; }
+        .input-dark { background: #2a2a2a; color: white; border: 1px solid #444; text-align: center; }
         .log-container { background: #222; border-radius: 10px; padding: 10px; margin-top: 20px; font-size: 0.85rem; border: 1px solid #444; }
         .log-entry { color: #4caf50; border-bottom: 1px solid #333; padding: 8px 0; font-weight: bold; }
         .scan-msg { background: #4caf50; color: white; padding: 10px; border-radius: 8px; margin-bottom: 10px; text-align: center; animation: fadeOut 3s forwards; }
@@ -50,14 +51,24 @@
 </head>
 <body>
 
-    <div id="setup-page" class="page active" style="text-align:center; padding-top:50px;">
-        <h2>巡回点検システム</h2>
-        <p style="color:#aaa;">電波のある場所、位置情報が許可された環境で起動してください</p>
-        <button onclick="startApp()" class="btn btn-blue">システムを起動する</button>
+    <div id="setup-page" class="page active" style="text-align:center; padding-top:40px;">
+        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V3.7</span></h2>
+        <p style="color:#aaa; font-size:0.9rem; padding:0 20px;">電波のある場所、位置情報が許可された環境で起動してください</p>
+        
+        <div style="margin: 30px 15px; background:#222; padding:20px; border-radius:12px; border:1px solid #444;">
+            <label style="display:block; margin-bottom:12px; font-weight:bold; color:#ffeb3b;">👤 点検担当者名を入力してください</label>
+            <input type="text" id="inspectorName" class="input-dark" placeholder="例：山田 太郎" style="width:100%; box-sizing:border-box; font-size:1.2rem;">
+        </div>
+
+        <button onclick="startApp()" class="btn btn-blue" style="width:90%; margin:0 auto;">システムを起動する</button>
     </div>
 
     <div id="scan-page" class="page">
-        <h3 style="text-align:center; margin-top:0;">📷 打刻スキャン</h3>
+        <div class="sticky-nav" style="margin-bottom:10px;">
+            <div style="font-size:0.85rem; color:#aaa;">担当：<span id="nav-worker-name" style="color:#fff; font-weight:bold;">--</span></div>
+            <h3 style="margin:0; font-size:1.1rem;">📷 打刻スキャン</h3>
+            <div style="width:50px;"></div>
+        </div>
         <div id="reader"></div>
         <div class="db-display" id="db-live">-- dB</div>
         <div style="background:#333; padding:10px; border-radius:10px; margin-bottom:15px;">
@@ -80,8 +91,8 @@
     <div id="check-page" class="page" style="padding:0;">
         <div class="sticky-nav">
             <button onclick="showPage('scan-page')" class="btn btn-gray btn-small">⬅ 戻る</button>
-            <h3 style="margin:0;">📋 点検リスト</h3>
-            <div style="width:60px;"></div>
+            <h3 style="margin:0; font-size:1.1rem;">📋 点検リスト</h3>
+            <div style="font-size:0.85rem; color:#aaa;">担当：<span id="nav-worker-name2" style="color:#fff; font-weight:bold;">--</span></div>
         </div>
         <div style="padding:15px;">
             <div id="checklist-container"></div>
@@ -118,6 +129,16 @@
     }
 
     async function startApp() {
+        const nameInput = document.getElementById('inspectorName').value.trim();
+        if(!nameInput) {
+            alert("点検を始める前に、担当者名を入力してください。");
+            return;
+        }
+        // 担当者名を保持
+        localStorage.setItem('myPatrolInspector', nameInput);
+        document.getElementById('nav-worker-name').innerText = nameInput;
+        document.getElementById('nav-worker-name2').innerText = nameInput;
+
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -162,15 +183,15 @@
         });
     }
 
-    function getNowDateTimeString() {
+    // 分離しやすいように日付単体、時間単体を返す仕組みに変更
+    function getTodayDateString() {
         const d = new Date();
-        const year = d.getFullYear();
-        const month = d.getMonth() + 1;
-        const date = d.getDate();
-        const h = String(d.getHours()).padStart(2, '0');
-        const m = String(d.getMinutes()).padStart(2, '0');
-        const s = String(d.getSeconds()).padStart(2, '0');
-        return `${year}/${month}/${date} ${h}:${m}:${s}`;
+        return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+    }
+
+    function getNowTimeString() {
+        const d = new Date();
+        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
     }
 
     async function doLog(txt, isManual = false) {
@@ -184,12 +205,14 @@
         }
 
         const coords = await getGPSPosition();
-        const currentFullTime = getNowDateTimeString(); 
         
         let data = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
         if (!data[txt]) data[txt] = { r1: "", r1note: "", r2: "", r2note: "" };
         
-        data[txt].time = currentFullTime + (isManual ? "(手)" : "");
+        // 日付・時間・担当者を打刻データに紐付け
+        data[txt].date = getTodayDateString();
+        data[txt].time = getNowTimeString() + (isManual ? "(手)" : "");
+        data[txt].inspector = localStorage.getItem('myPatrolInspector') || "未登録";
         data[txt].db = currentDb;
         data[txt].lat = coords.lat;
         data[txt].lng = coords.lng;
@@ -204,7 +227,6 @@
         } else { isProcessing = false; }
     }
 
-    // 【修正】セレクトボックスの選択肢に「- 省略」を追加
     function renderChecklist() {
         const container = document.getElementById('checklist-container');
         const areas = JSON.parse(localStorage.getItem('myPatrolAreas')) || [];
@@ -245,29 +267,48 @@
         let d = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
         if (!d[area]) d[area] = { r1: "", r1note: "", r2: "", r2note: "" };
         d[area][field] = val;
+        // 点検結果が上書きされたタイミングでも担当者名と日付を補完
+        if (!d[area].date) d[area].date = getTodayDateString();
+        if (!d[area].inspector) d[area].inspector = localStorage.getItem('myPatrolInspector') || "未登録";
+        
         localStorage.setItem('myPatrolResults', JSON.stringify(d));
     }
 
+    // 【大幅強化】Excel出力に「巡回日付」と「担当者名」の列を完全固定追加
     function downloadExcel() {
         const results = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
-        if (Object.keys(results).length === 0) { alert("保存するデータがありません"); return; }
+        const areas = JSON.parse(localStorage.getItem('myPatrolAreas')) || [];
+        
+        if (areas.length === 0 && Object.keys(results).length === 0) { 
+            alert("保存するデータがありません"); 
+            return; 
+        }
 
-        const excelData = [[ "エリア名", "打刻時刻", "騒音(dB)", "緯度", "経度", "点検1結果", "点検1メモ", "点検2結果", "点検2メモ", "GoogleMapリンク" ]];
+        // 列見出しの設定（左側に「巡回日付」「担当者名」を配置）
+        const excelData = [[ "巡回日付", "担当者名", "エリア名", "打刻時刻", "騒音(dB)", "緯度", "経度", "点検1結果", "点検1メモ", "点検2結果", "点検2メモ", "GoogleMapリンク" ]];
 
-        Object.keys(results).sort().forEach(key => {
-            const r = results[key];
-            const mapLink = (r.lat && r.lng) ? `https://maps.google.com/?q=緯度,経度?q=${r.lat},${r.lng}` : "取得なし";
+        // 設定されているマスタエリア順（または打刻順）で全エリアを綺麗に出力
+        const targetKeys = areas.length > 0 ? areas : Object.keys(results).sort();
+        const globalInspector = localStorage.getItem('myPatrolInspector') || "未登録";
+        const globalDate = getTodayDateString();
+
+        targetKeys.forEach(key => {
+            const r = results[key] || { r1: "", r1note: "", r2: "", r2note: "" };
+            const mapLink = (r.lat && r.lng) ? `https://maps.google.com/?q=${r.lat},${r.lng}` : "取得なし";
+            
             excelData.push([
-                key.replace(/[#*]/g,''),
-                r.time || "未通過",
-                r.db ? r.db + " dB" : "",
+                r.date || globalDate,                 // 巡回日付
+                r.inspector || globalInspector,       // 担当者名
+                key.replace(/[#*]/g,''),              // エリア名
+                r.time || "未通過",                   // 打刻時刻
+                r.db ? r.db + " dB" : "",             // 騒音
                 r.lat || "",
                 r.lng || "",
-                r.r1 || "",
-                r.r1note || "",
-                r.r2 || "",
-                r.r2note || "",
-                mapLink
+                r.r1 || "",                           // 点検1結果（確実に反映）
+                r.r1note || "",                       // 点検1メモ
+                r.r2 || "",                           // 点検2結果
+                r.r2note || "",                       // 点検2メモ
+                mapLink                               // マップリンクを標準に修正
             ]);
         });
 
@@ -275,9 +316,8 @@
         const ws = XLSX.utils.aoa_to_sheet(excelData);
         XLSX.utils.book_append_sheet(wb, ws, "巡回点検結果");
         
-        const today = new Date();
-        const dateStr = `${today.getFullYear()}-${today.getMonth()+1}-${today.getDate()}`;
-        XLSX.writeFile(wb, `巡回報告_${dateStr}.xlsx`);
+        const dateStr = globalDate.replace(/\//g, '-');
+        XLSX.writeFile(wb, `巡回報告_${dateStr}_${globalInspector}.xlsx`);
     }
 
     function sendReport(type) {
@@ -288,9 +328,10 @@
         const summaryStatus = isNormal ? "【巡回結果：異常なし】" : "【巡回結果：★異常あり★】";
 
         const mailTo = localStorage.getItem('myPatrolEmail') || "";
+        const globalInspector = localStorage.getItem('myPatrolInspector') || "未登録";
+        const reportTime = getTodayDateString() + " " + getNowTimeString();
         
-        const reportTime = getNowDateTimeString();
-        let body = `${summaryStatus}\n報告日時: ${reportTime}\n\n※Excelファイルを出力した場合は、このメールに添付して送信してください。\n\n`;
+        let body = `${summaryStatus}\n報告日時: ${reportTime}\n担当者: ${globalInspector}\n\n※Excelファイルを出力した場合は、このメールに添付して送信してください。\n\n`;
         body += type === 'scan' ? "＜巡回打刻履歴＞\n\n" : "＜巡回点検詳細＞\n\n";
 
         Object.keys(results).sort().forEach(key => {
@@ -298,18 +339,17 @@
             const name = key.replace(/[#*]/g,'');
             if(type === 'scan' && r.time) {
                 body += `■${name}\n時刻: ${r.time} / 騒音: ${r.db}dB\n`;
-                if(r.lat && r.lng) body += `位置: https://maps.google.com/?q=緯度,経度?q=${r.lat},${r.lng}\n`;
+                if(r.lat && r.lng) body += `位置: https://maps.google.com/?q=${r.lat},${r.lng}\n`;
                 body += `\n`;
             }
             else if(type === 'check' && !key.endsWith('#')) {
-                // 【連動】メール本文にも「-」の省略結果が反映されます
                 body += `■${name} (${r.time || '未通過'})\n 1回目: ${r.r1||'未'} ${r.r1note||''}\n${!key.endsWith('*')?` 2回目: ${r.r2||'未'} ${r.r2note||''}\n`:''}`;
-                if(r.lat && r.lng) body += ` (位置: https://maps.google.com/?q=緯度,経度?q=${r.lat},${r.lng})\n`;
+                if(r.lat && r.lng) body += ` (位置: https://maps.google.com/?q=${r.lat},${r.lng})\n`;
                 body += `\n`;
             }
         });
 
-        const mailSubject = `${summaryStatus} 巡回点検報告 (${reportTime})`;
+        const mailSubject = `${summaryStatus} 巡回点検報告 (${globalInspector}_${getTodayDateString()})`;
         location.href = `mailto:${mailTo}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(body)}`;
     }
 
@@ -351,6 +391,13 @@
         localStorage.setItem('myPatrolAreas', JSON.stringify(document.getElementById('cfgAreas').value.split('\n').map(a => a.trim()).filter(a => a)));
         alert("設定を保存しました");
         location.reload();
+    }
+
+    // 画面ロード時に前回の担当者が残っていれば自動入力
+    window.onload = function() {
+        if(localStorage.getItem('myPatrolInspector')) {
+            document.getElementById('inspectorName').value = localStorage.getItem('myPatrolInspector');
+        }
     }
 </script>
 </body>
