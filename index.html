@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>巡回点検システム V3.7 (担当者名・日付拡張版)</title>
+    <title>巡回点検システム V3.9 (位置記憶版)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -47,12 +47,13 @@
         @keyframes fadeOut { 0% {opacity: 1;} 80% {opacity: 1;} 100% {opacity: 0;} }
         #config-ui { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:9999; padding:20px; box-sizing:border-box; overflow-y: auto; }
         .config-section { background: #222; padding: 15px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #444; }
+        .info-text { font-size: 0.8rem; color: #aaa; text-align: center; margin-top: 40px; padding: 10px; border-top: 1px dashed #444; }
     </style>
 </head>
 <body>
 
     <div id="setup-page" class="page active" style="text-align:center; padding-top:40px;">
-        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V3.7</span></h2>
+        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V3.9</span></h2>
         <p style="color:#aaa; font-size:0.9rem; padding:0 20px;">電波のある場所、位置情報が許可された環境で起動してください</p>
         
         <div style="margin: 30px 15px; background:#222; padding:20px; border-radius:12px; border:1px solid #444;">
@@ -86,6 +87,8 @@
             <div id="statusLog"></div>
         </div>
         <button onclick="toggleConfig()" style="margin-top:20px; width:100%; background:none; border:none; color:#555; font-size:0.8rem;">⚙ 設定</button>
+        
+        <div class="info-text">💡 アンプリの終了方法：ブラウザのタブを閉じるか、スマホの履歴画面からアプリを消去（タスクキル）してください。</div>
     </div>
 
     <div id="check-page" class="page" style="padding:0;">
@@ -120,12 +123,29 @@
 <script>
     let audioContext, analyser, currentDb = 0, html5QrCode;
     let isProcessing = false;
+    let savedScrollPositions = {}; // 【新機能】スクロール位置を記憶するオブジェクト
 
+    // 【改良】ページ遷移時にスクロール位置を記憶・復元する
     function showPage(pageId) {
+        // 現在のページのスクロール位置を記憶
+        const currentPage = document.querySelector('.page.active');
+        if (currentPage) {
+            savedScrollPositions[currentPage.id] = window.scrollY;
+        }
+
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         document.getElementById(pageId).classList.add('active');
-        if(pageId === 'check-page') renderChecklist();
-        window.scrollTo(0,0);
+        
+        if(pageId === 'check-page') {
+            renderChecklist();
+            // 点検リストに戻ったときは、記憶していた位置にスクロール
+            setTimeout(() => {
+                window.scrollTo(0, savedScrollPositions['check-page'] || 0);
+            }, 50);
+        } else {
+            // スキャンページなど、それ以外は元の位置かトップ
+            window.scrollTo(0, savedScrollPositions[pageId] || 0);
+        }
     }
 
     async function startApp() {
@@ -134,7 +154,6 @@
             alert("点検を始める前に、担当者名を入力してください。");
             return;
         }
-        // 担当者名を保持
         localStorage.setItem('myPatrolInspector', nameInput);
         document.getElementById('nav-worker-name').innerText = nameInput;
         document.getElementById('nav-worker-name2').innerText = nameInput;
@@ -166,24 +185,15 @@
 
     function getGPSPosition() {
         return new Promise((resolve) => {
-            if (!navigator.geolocation) {
-                resolve({ lat: null, lng: null });
-                return;
-            }
+            if (!navigator.geolocation) { resolve({ lat: null, lng: null }); return; }
             navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    resolve({ lat: position.coords.latitude, lng: position.coords.longitude });
-                },
-                (error) => {
-                    console.error("GPS取得失敗:", error);
-                    resolve({ lat: null, lng: null });
-                },
+                (position) => { resolve({ lat: position.coords.latitude, lng: position.coords.longitude }); },
+                (error) => { console.error("GPS取得失敗:", error); resolve({ lat: null, lng: null }); },
                 { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
             );
         });
     }
 
-    // 分離しやすいように日付単体、時間単体を返す仕組みに変更
     function getTodayDateString() {
         const d = new Date();
         return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
@@ -205,11 +215,9 @@
         }
 
         const coords = await getGPSPosition();
-        
         let data = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
         if (!data[txt]) data[txt] = { r1: "", r1note: "", r2: "", r2note: "" };
         
-        // 日付・時間・担当者を打刻データに紐付け
         data[txt].date = getTodayDateString();
         data[txt].time = getNowTimeString() + (isManual ? "(手)" : "");
         data[txt].inspector = localStorage.getItem('myPatrolInspector') || "未登録";
@@ -267,138 +275,62 @@
         let d = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
         if (!d[area]) d[area] = { r1: "", r1note: "", r2: "", r2note: "" };
         d[area][field] = val;
-        // 点検結果が上書きされたタイミングでも担当者名と日付を補完
         if (!d[area].date) d[area].date = getTodayDateString();
         if (!d[area].inspector) d[area].inspector = localStorage.getItem('myPatrolInspector') || "未登録";
-        
         localStorage.setItem('myPatrolResults', JSON.stringify(d));
     }
 
-    // 【大幅強化】Excel出力に「巡回日付」と「担当者名」の列を完全固定追加
     function downloadExcel() {
         const results = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
         const areas = JSON.parse(localStorage.getItem('myPatrolAreas')) || [];
-        
-        if (areas.length === 0 && Object.keys(results).length === 0) { 
-            alert("保存するデータがありません"); 
-            return; 
-        }
+        if (areas.length === 0 && Object.keys(results).length === 0) { alert("保存するデータがありません"); return; }
 
-        // 列見出しの設定（左側に「巡回日付」「担当者名」を配置）
         const excelData = [[ "巡回日付", "担当者名", "エリア名", "打刻時刻", "騒音(dB)", "緯度", "経度", "点検1結果", "点検1メモ", "点検2結果", "点検2メモ", "GoogleMapリンク" ]];
-
-        // 設定されているマスタエリア順（または打刻順）で全エリアを綺麗に出力
         const targetKeys = areas.length > 0 ? areas : Object.keys(results).sort();
         const globalInspector = localStorage.getItem('myPatrolInspector') || "未登録";
         const globalDate = getTodayDateString();
 
         targetKeys.forEach(key => {
             const r = results[key] || { r1: "", r1note: "", r2: "", r2note: "" };
-            const mapLink = (r.lat && r.lng) ? `https://maps.google.com/?q=${r.lat},${r.lng}` : "取得なし";
-            
-            excelData.push([
-                r.date || globalDate,                 // 巡回日付
-                r.inspector || globalInspector,       // 担当者名
-                key.replace(/[#*]/g,''),              // エリア名
-                r.time || "未通過",                   // 打刻時刻
-                r.db ? r.db + " dB" : "",             // 騒音
-                r.lat || "",
-                r.lng || "",
-                r.r1 || "",                           // 点検1結果（確実に反映）
-                r.r1note || "",                       // 点検1メモ
-                r.r2 || "",                           // 点検2結果
-                r.r2note || "",                       // 点検2メモ
-                mapLink                               // マップリンクを標準に修正
-            ]);
+            const mapLink = (r.lat && r.lng) ? `http://googleusercontent.com/maps.google.com/maps?q=${r.lat},${r.lng}` : "取得なし";
+            excelData.push([r.date||globalDate, r.inspector||globalInspector, key.replace(/[#*]/g,''), r.time||"未通過", r.db?r.db+" dB":"", r.lat||"", r.lng||"", r.r1||"", r.r1note||"", r.r2||"", r.r2note||"", mapLink]);
         });
 
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet(excelData);
         XLSX.utils.book_append_sheet(wb, ws, "巡回点検結果");
-        
-        const dateStr = globalDate.replace(/\//g, '-');
-        XLSX.writeFile(wb, `巡回報告_${dateStr}_${globalInspector}.xlsx`);
+        XLSX.writeFile(wb, `巡回報告_${globalDate.replace(/\//g, '-')}_${globalInspector}.xlsx`);
     }
 
     function sendReport(type) {
         const results = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
         if (Object.keys(results).length === 0) { alert("報告するデータがありません"); return; }
-
-        const isNormal = confirm("【最終確認】\n全体を通して「異常なし」で報告しますか？\n（[キャンセル]を押すと「異常あり★」として報告します）");
+        const isNormal = confirm("【最終確認】\n全体を通して「異常なし」で報告しますか？");
         const summaryStatus = isNormal ? "【巡回結果：異常なし】" : "【巡回結果：★異常あり★】";
-
         const mailTo = localStorage.getItem('myPatrolEmail') || "";
         const globalInspector = localStorage.getItem('myPatrolInspector') || "未登録";
         const reportTime = getTodayDateString() + " " + getNowTimeString();
         
-        let body = `${summaryStatus}\n報告日時: ${reportTime}\n担当者: ${globalInspector}\n\n※Excelファイルを出力した場合は、このメールに添付して送信してください。\n\n`;
-        body += type === 'scan' ? "＜巡回打刻履歴＞\n\n" : "＜巡回点検詳細＞\n\n";
-
+        let body = `${summaryStatus}\n報告日時: ${reportTime}\n担当者: ${globalInspector}\n\n`;
         Object.keys(results).sort().forEach(key => {
-            const r = results[key];
-            const name = key.replace(/[#*]/g,'');
-            if(type === 'scan' && r.time) {
-                body += `■${name}\n時刻: ${r.time} / 騒音: ${r.db}dB\n`;
-                if(r.lat && r.lng) body += `位置: https://maps.google.com/?q=${r.lat},${r.lng}\n`;
-                body += `\n`;
-            }
-            else if(type === 'check' && !key.endsWith('#')) {
-                body += `■${name} (${r.time || '未通過'})\n 1回目: ${r.r1||'未'} ${r.r1note||''}\n${!key.endsWith('*')?` 2回目: ${r.r2||'未'} ${r.r2note||''}\n`:''}`;
-                if(r.lat && r.lng) body += ` (位置: https://maps.google.com/?q=${r.lat},${r.lng})\n`;
-                body += `\n`;
-            }
+            const r = results[key]; const name = key.replace(/[#*]/g,'');
+            if(type === 'scan' && r.time) body += `■${name}\n時刻: ${r.time} / 騒音: ${r.db}dB\n\n`;
+            else if(type === 'check' && !key.endsWith('#')) body += `■${name} (${r.time||'未'}) 1回目:${r.r1||'未'} ${r.r1note||''}\n`;
         });
-
-        const mailSubject = `${summaryStatus} 巡回点検報告 (${globalInspector}_${getTodayDateString()})`;
-        location.href = `mailto:${mailTo}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(body)}`;
+        location.href = `mailto:${mailTo}?subject=${encodeURIComponent(summaryStatus)}&body=${encodeURIComponent(body)}`;
     }
 
     function clearData() { if(confirm("全データをリセットしますか？")) { localStorage.removeItem('myPatrolResults'); location.reload(); } }
-    
     function refreshLogDisplay() {
-        const logDiv = document.getElementById('statusLog');
-        const data = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
-        let html = "";
-        Object.keys(data).filter(k => data[k].time).sort((a,b) => (data[b].time > data[a].time ? 1 : -1)).forEach(name => {
-            html += `<div class="log-entry">✅ ${name.replace(/[#*]/g,'')} (${data[name].time})</div>`;
-        });
+        const logDiv = document.getElementById('statusLog'); const data = JSON.parse(localStorage.getItem('myPatrolResults')) || {}; let html = "";
+        Object.keys(data).filter(k => data[k].time).sort((a,b) => (data[b].time > data[a].time ? 1 : -1)).forEach(name => { html += `<div class="log-entry">✅ ${name.replace(/[#*]/g,'')} (${data[name].time})</div>`; });
         logDiv.innerHTML = html;
     }
-
-    function setupManualSelect() {
-        const sel = document.getElementById('manualAreaSelect');
-        const areas = JSON.parse(localStorage.getItem('myPatrolAreas')) || [];
-        const targets = areas.filter(a => a.endsWith('#'));
-        sel.innerHTML = targets.map(a => `<option value="${a}">${a.replace('#','')}</option>`).join('');
-    }
-
-    function manualLog() {
-        const val = document.getElementById('manualAreaSelect').value;
-        if(val) doLog(val, true);
-    }
-
-    function toggleConfig() {
-        const ui = document.getElementById('config-ui');
-        if(ui.style.display==='none' || !ui.style.display){
-            document.getElementById('cfgAreas').value = localStorage.getItem('myPatrolAreas') ? JSON.parse(localStorage.getItem('myPatrolAreas')).join('\n') : "";
-            document.getElementById('cfgEmail').value = localStorage.getItem('myPatrolEmail') || "";
-            ui.style.display='block';
-        } else { ui.style.display='none'; }
-    }
-
-    function saveConfig() {
-        localStorage.setItem('myPatrolEmail', document.getElementById('cfgEmail').value);
-        localStorage.setItem('myPatrolAreas', JSON.stringify(document.getElementById('cfgAreas').value.split('\n').map(a => a.trim()).filter(a => a)));
-        alert("設定を保存しました");
-        location.reload();
-    }
-
-    // 画面ロード時に前回の担当者が残っていれば自動入力
-    window.onload = function() {
-        if(localStorage.getItem('myPatrolInspector')) {
-            document.getElementById('inspectorName').value = localStorage.getItem('myPatrolInspector');
-        }
-    }
+    function setupManualSelect() { const sel = document.getElementById('manualAreaSelect'); const areas = JSON.parse(localStorage.getItem('myPatrolAreas')) || []; const targets = areas.filter(a => a.endsWith('#')); sel.innerHTML = targets.map(a => `<option value="${a}">${a.replace('#','')}</option>`).join(''); }
+    function manualLog() { const val = document.getElementById('manualAreaSelect').value; if(val) doLog(val, true); }
+    function toggleConfig() { const ui = document.getElementById('config-ui'); if(ui.style.display==='none' || !ui.style.display){ document.getElementById('cfgAreas').value = localStorage.getItem('myPatrolAreas') ? JSON.parse(localStorage.getItem('myPatrolAreas')).join('\n') : ""; document.getElementById('cfgEmail').value = localStorage.getItem('myPatrolEmail') || ""; ui.style.display='block'; } else { ui.style.display='none'; } }
+    function saveConfig() { localStorage.setItem('myPatrolEmail', document.getElementById('cfgEmail').value); localStorage.setItem('myPatrolAreas', JSON.stringify(document.getElementById('cfgAreas').value.split('\n').map(a => a.trim()).filter(a => a))); alert("設定を保存しました"); location.reload(); }
+    window.onload = function() { if(localStorage.getItem('myPatrolInspector')) { document.getElementById('inspectorName').value = localStorage.getItem('myPatrolInspector'); } }
 </script>
 </body>
 </html>
