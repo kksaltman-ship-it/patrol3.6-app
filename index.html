@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>巡回点検システム V4.0 (運用完全対応版)</title>
+    <title>巡回点検システム V4.1 (Excel修正版)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -53,7 +53,7 @@
 <body>
 
     <div id="setup-page" class="page active" style="text-align:center; padding-top:40px;">
-        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V4.0</span></h2>
+        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V4.1</span></h2>
         <p style="color:#aaa; font-size:0.9rem; padding:0 20px;">交代時は名前を書き換えて[起動]を押してください</p>
         
         <div style="margin: 30px 15px; background:#222; padding:20px; border-radius:12px; border:1px solid #444;">
@@ -212,11 +212,9 @@
         const coords = await getGPSPosition();
         let data = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
         
-        // QRコードの生テキストから末尾記号を除去したものをキーにする（バグ回避）
         const cleanKey = txt.replace(/[#*]/g,'');
         if (!data[cleanKey]) data[cleanKey] = { r1: "", r1note: "", r2: "", r2note: "" };
         
-        // 打刻した瞬間の「日付」「時刻」「その時の担当者」を個別ロック保存
         data[cleanKey].date = getTodayDateString();
         data[cleanKey].time = getNowTimeString() + (isManual ? "(手)" : "");
         data[cleanKey].inspector = localStorage.getItem('myPatrolInspector') || "未登録";
@@ -276,15 +274,13 @@
         if (!d[cleanKey]) d[cleanKey] = { r1: "", r1note: "", r2: "", r2note: "" };
         
         d[cleanKey][field] = val;
-        
-        // 点検を入力した瞬間の「日付」と「担当者」を個別ロック保存
         d[cleanKey].check_date = getTodayDateString();
         d[cleanKey].check_inspector = localStorage.getItem('myPatrolInspector') || "未登録";
         
         localStorage.setItem('myPatrolResults', JSON.stringify(d));
     }
 
-    // 【完全修正】登録マスタに依存せず、スマホが記録した「生の打刻データ」を100%出力
+    // 【修正完了】GoogleMapリンク生成時の記述ミスを修正し、打刻行も安全に出力されるようにしました
     function downloadExcel() {
         const results = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
         if (Object.keys(results).length === 0) { alert("保存するデータがありません"); return; }
@@ -293,18 +289,18 @@
 
         Object.keys(results).sort().forEach(cleanKey => {
             const r = results[cleanKey];
-            const mapLink = (r.lat && r.lng) ? `http://maps.google.com/?q=${r.lat},${r.lng}` : "";
+            const mapLink = (r.lat && r.lng) ? `https://www.google.com/maps?q=${r.lat},${r.lng}` : "";
             
             excelData.push([
-                r.date || "",               // QRが読まれた日付
-                r.inspector || "",          // QRを読んだ人
-                cleanKey,                   // エリア名
-                r.time || "未通過",          // 時刻
+                r.date || "",
+                r.inspector || "",
+                cleanKey,
+                r.time || "未通過",
                 r.db ? r.db + " dB" : "",
                 r.lat || "",
                 r.lng || "",
-                r.check_date || "",         // リストが入力された日付（日付またぎ対応）
-                r.check_inspector || "",    // リストを入力した人（交代対応）
+                r.check_date || "",
+                r.check_inspector || "",
                 r.r1 || "",
                 r.r1note || "",
                 r.r2 || "",
@@ -322,7 +318,6 @@
         XLSX.writeFile(wb, `巡回完全報告_${fileDate}.xlsx`);
     }
 
-    // 【メール切断バグ修正】途中で文章作成が落ちない安全なループ処理
     function sendReport() {
         const results = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
         if (Object.keys(results).length === 0) { alert("報告するデータがありません"); return; }
@@ -336,13 +331,14 @@
 
         Object.keys(results).sort().forEach(cleanKey => {
             const r = results[cleanKey];
+            const mapLink = (r.lat && r.lng) ? `https://www.google.com/maps?q=${r.lat},${r.lng}` : "";
             body += `■ ${cleanKey}\n`;
             body += `  ・打刻状況: ${r.time || "未通過"} (担当:${r.inspector || "なし"})\n`;
             if (r.db) body += `  ・騒音値  : ${r.db} dB\n`;
             if (r.r1) body += `  ・点検1   : [${r.r1}] ${r.r1note || ""}\n`;
             if (r.r2) body += `  ・点検2   : [${r.r2}] ${r.r2note || ""}\n`;
             if (r.check_inspector) body += `  ・点検担当: ${r.check_inspector}\n`;
-            if (r.lat && r.lng) body += `  ・位置情報: http://maps.google.com/?q=${r.lat},${r.lng}\n`;
+            if (mapLink) body += `  ・位置情報: ${mapLink}\n`;
             body += `-----------------------\n`;
         });
 
