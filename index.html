@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>巡回点検システム V4.1 (Excel修正版)</title>
+    <title>巡回点検システム V4.2 (履歴全保存版)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -47,13 +47,12 @@
         @keyframes fadeOut { 0% {opacity: 1;} 80% {opacity: 1;} 100% {opacity: 0;} }
         #config-ui { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:9999; padding:20px; box-sizing:border-box; overflow-y: auto; }
         .config-section { background: #222; padding: 15px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #444; }
-        .info-text { font-size: 0.8rem; color: #aaa; text-align: center; margin-top: 40px; padding: 10px; border-top: 1px dashed #444; }
     </style>
 </head>
 <body>
 
     <div id="setup-page" class="page active" style="text-align:center; padding-top:40px;">
-        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V4.1</span></h2>
+        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V4.2</span></h2>
         <p style="color:#aaa; font-size:0.9rem; padding:0 20px;">交代時は名前を書き換えて[起動]を押してください</p>
         
         <div style="margin: 30px 15px; background:#222; padding:20px; border-radius:12px; border:1px solid #444;">
@@ -199,6 +198,7 @@
         return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
     }
 
+    // 【V4.2仕様変更】履歴をすべて配列として末尾に追加していく（上書き廃止）
     async function doLog(txt, isManual = false) {
         if (isProcessing && !isManual) return;
         isProcessing = true;
@@ -210,19 +210,23 @@
         }
 
         const coords = await getGPSPosition();
-        let data = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
-        
+        let timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
         const cleanKey = txt.replace(/[#*]/g,'');
-        if (!data[cleanKey]) data[cleanKey] = { r1: "", r1note: "", r2: "", r2note: "" };
         
-        data[cleanKey].date = getTodayDateString();
-        data[cleanKey].time = getNowTimeString() + (isManual ? "(手)" : "");
-        data[cleanKey].inspector = localStorage.getItem('myPatrolInspector') || "未登録";
-        data[cleanKey].db = currentDb;
-        data[cleanKey].lat = coords.lat;
-        data[cleanKey].lng = coords.lng;
+        // 1つのアクションごとに独立したオブジェクトを作って履歴に追加
+        const newLog = {
+            type: "SCAN",
+            area: cleanKey,
+            date: getTodayDateString(),
+            time: getNowTimeString() + (isManual ? "(手)" : ""),
+            inspector: localStorage.getItem('myPatrolInspector') || "未登録",
+            db: currentDb,
+            lat: coords.lat,
+            lng: coords.lng
+        };
         
-        localStorage.setItem('myPatrolResults', JSON.stringify(data));
+        timeline.push(newLog);
+        localStorage.setItem('myPatrolTimeline', JSON.stringify(timeline));
         refreshLogDisplay();
         
         if(!isManual) {
@@ -232,10 +236,24 @@
         } else { isProcessing = false; }
     }
 
+    // 最新の入力内容（UIへの初期値反映用）
+    function getLatestCheckValue(cleanKey) {
+        let timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
+        let res = { r1: "", r1note: "", r2: "", r2note: "" };
+        for (let i = timeline.length - 1; i >= 0; i--) {
+            if (timeline[i].type === "CHECK" && timeline[i].area === cleanKey) {
+                if(timeline[i].field === "r1") res.r1 = timeline[i].val;
+                if(timeline[i].field === "r1note") res.r1note = timeline[i].val;
+                if(timeline[i].field === "r2") res.r2 = timeline[i].val;
+                if(timeline[i].field === "r2note") res.r2note = timeline[i].val;
+            }
+        }
+        return res;
+    }
+
     function renderChecklist() {
         const container = document.getElementById('checklist-container');
         const areas = JSON.parse(localStorage.getItem('myPatrolAreas')) || [];
-        const results = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
         const targets = areas.filter(a => !a.endsWith('#'));
         if(targets.length === 0) {
             container.innerHTML = "<p style='color:#888; text-align:center;'>設定から点検エリアを登録してください</p>";
@@ -243,7 +261,7 @@
         }
         container.innerHTML = targets.map(area => {
             const cleanKey = area.replace(/[#*]/g,'');
-            const res = results[cleanKey] || { r1: "", r1note: "", r2: "", r2note: "" };
+            const res = getLatestCheckValue(cleanKey);
             const isSingle = area.endsWith('*');
             return `<div class="card">
                 <h4 style="margin:0 0 10px 0; color:#ffeb3b;">📍 ${cleanKey}</h4>
@@ -269,91 +287,106 @@
         }).join('');
     }
 
+    // 【V4.2新機能】点検入力時も毎回新しい履歴として時間とともに保存
     function updateResult(cleanKey, field, val) {
-        let d = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
-        if (!d[cleanKey]) d[cleanKey] = { r1: "", r1note: "", r2: "", r2note: "" };
-        
-        d[cleanKey][field] = val;
-        d[cleanKey].check_date = getTodayDateString();
-        d[cleanKey].check_inspector = localStorage.getItem('myPatrolInspector') || "未登録";
-        
-        localStorage.setItem('myPatrolResults', JSON.stringify(d));
+        let timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
+        const newCheckLog = {
+            type: "CHECK",
+            area: cleanKey,
+            field: field,
+            val: val,
+            date: getTodayDateString(),
+            time: getNowTimeString(),
+            inspector: localStorage.getItem('myPatrolInspector') || "未登録"
+        };
+        timeline.push(newCheckLog);
+        localStorage.setItem('myPatrolTimeline', JSON.stringify(timeline));
     }
 
-    // 【修正完了】GoogleMapリンク生成時の記述ミスを修正し、打刻行も安全に出力されるようにしました
+    // 【V4.2大改修】タイムラインをそのまま時系列の行としてExcel出力。打刻も点検もすべての時間が別々に出ます
     function downloadExcel() {
-        const results = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
-        if (Object.keys(results).length === 0) { alert("保存するデータがありません"); return; }
+        const timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
+        if (timeline.length === 0) { alert("保存するデータがありません"); return; }
 
-        const excelData = [[ "打刻日付", "打刻担当者", "エリア名", "打刻時刻", "騒音(dB)", "緯度", "経度", "点検日付", "点検担当者", "点検1結果", "点検1メモ", "点検2結果", "点検2メモ", "GoogleMap" ]];
+        const excelData = [[ "発生日付", "発生時刻", "担当者名", "巡回エリア名", "アクション項目", "内容 / 騒音値 / 点検結果", "メモ欄", "位置情報(GoogleMap)" ]];
 
-        Object.keys(results).sort().forEach(cleanKey => {
-            const r = results[cleanKey];
-            const mapLink = (r.lat && r.lng) ? `https://www.google.com/maps?q=${r.lat},${r.lng}` : "";
-            
+        timeline.forEach(log => {
+            let actionName = "";
+            let contentVal = "";
+            let noteVal = "";
+            let mapLink = "";
+
+            if(log.type === "SCAN") {
+                actionName = "📸 QRコード打刻";
+                contentVal = log.db ? log.db + " dB" : "打刻完了";
+                if (log.lat && log.lng) mapLink = `http://googleusercontent.com/maps.google.com/?q=${log.lat},${log.lng}`;
+            } else if(log.type === "CHECK") {
+                if(log.field === "r1") { actionName = "📋 点検1 結果入力"; contentVal = log.val; }
+                else if(log.field === "r1note") { actionName = "📋 点検1 メモ入力"; noteVal = log.val; }
+                else if(log.field === "r2") { actionName = "📋 点検2 結果入力"; contentVal = log.val; }
+                else if(log.field === "r2note") { actionName = "📋 点検2 メモ入力"; noteVal = log.val; }
+            }
+
+            // 空白の入力イベントなどはスキップして見やすくする
+            if(log.type === "CHECK" && !log.val) return;
+
             excelData.push([
-                r.date || "",
-                r.inspector || "",
-                cleanKey,
-                r.time || "未通過",
-                r.db ? r.db + " dB" : "",
-                r.lat || "",
-                r.lng || "",
-                r.check_date || "",
-                r.check_inspector || "",
-                r.r1 || "",
-                r.r1note || "",
-                r.r2 || "",
-                r.r2note || "",
+                log.date,
+                log.time,
+                log.inspector,
+                log.area,
+                actionName,
+                contentVal,
+                noteVal,
                 mapLink
             ]);
         });
 
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet(excelData);
-        XLSX.utils.book_append_sheet(wb, ws, "巡回点検結果");
+        XLSX.utils.book_append_sheet(wb, ws, "タイムライン履歴");
         
         const d = new Date();
         const fileDate = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
-        XLSX.writeFile(wb, `巡回完全報告_${fileDate}.xlsx`);
+        XLSX.writeFile(wb, `巡回タイムライン報告_${fileDate}.xlsx`);
     }
 
+    // メールの本文生成も新しいタイムライン形式に対応
     function sendReport() {
-        const results = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
-        if (Object.keys(results).length === 0) { alert("報告するデータがありません"); return; }
+        const timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
+        if (timeline.length === 0) { alert("報告するデータがありません"); return; }
 
         const isNormal = confirm("【最終確認】\n全体を通して「異常なし」で報告しますか？");
         const summaryStatus = isNormal ? "【巡回結果：異常なし】" : "【巡回結果：★異常あり★】";
         const mailTo = localStorage.getItem('myPatrolEmail') || "";
         
         let body = `${summaryStatus}\n報告送信日時: ${getTodayDateString()} ${getNowTimeString()}\n\n`;
-        body += "＜巡回エリア別 詳細実績＞\n-----------------------\n";
+        body += "＜巡回・点検 時系列全履歴＞\n-----------------------\n";
 
-        Object.keys(results).sort().forEach(cleanKey => {
-            const r = results[cleanKey];
-            const mapLink = (r.lat && r.lng) ? `https://www.google.com/maps?q=${r.lat},${r.lng}` : "";
-            body += `■ ${cleanKey}\n`;
-            body += `  ・打刻状況: ${r.time || "未通過"} (担当:${r.inspector || "なし"})\n`;
-            if (r.db) body += `  ・騒音値  : ${r.db} dB\n`;
-            if (r.r1) body += `  ・点検1   : [${r.r1}] ${r.r1note || ""}\n`;
-            if (r.r2) body += `  ・点検2   : [${r.r2}] ${r.r2note || ""}\n`;
-            if (r.check_inspector) body += `  ・点検担当: ${r.check_inspector}\n`;
-            if (mapLink) body += `  ・位置情報: ${mapLink}\n`;
-            body += `-----------------------\n`;
+        timeline.forEach(log => {
+            if(log.type === "SCAN") {
+                body += `[${log.date} ${log.time}] 📸 ${log.area} 打刻 (担当:${log.inspector}) / 騒音:${log.db||'--'}dB\n`;
+            } else if(log.type === "CHECK" && log.val) {
+                let fName = log.field.includes("r1") ? "点検1" : "点検2";
+                let tName = log.field.includes("note") ? "メモ" : "結果";
+                body += `[${log.date} ${log.time}] 📋 ${log.area} ${fName}の${tName}入力 ➡️ 「${log.val}」 (担当:${log.inspector})\n`;
+            }
         });
+        body += "-----------------------\n";
 
         const mailSubject = `${summaryStatus} 巡回最終報告 (${getTodayDateString()})`;
         location.href = `mailto:${mailTo}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(body)}`;
     }
 
-    function clearData() { if(confirm("全データをリセットしますか？")) { localStorage.removeItem('myPatrolResults'); location.reload(); } }
+    function clearData() { if(confirm("全データをリセットしますか？")) { localStorage.removeItem('myPatrolTimeline'); location.reload(); } }
     
     function refreshLogDisplay() {
         const logDiv = document.getElementById('statusLog');
-        const data = JSON.parse(localStorage.getItem('myPatrolResults')) || {};
+        const timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
         let html = "";
-        Object.keys(data).filter(k => data[k].time).forEach(cleanKey => {
-            html += `<div class="log-entry">✅ ${cleanKey} (${data[cleanKey].time})</div>`;
+        // 直近の打刻を表示
+        timeline.filter(l => l.type === "SCAN").reverse().slice(0, 5).forEach(log => {
+            html += `<div class="log-entry">✅ ${log.area} (${log.time}) - ${log.inspector}</div>`;
         });
         logDiv.innerHTML = html;
     }
