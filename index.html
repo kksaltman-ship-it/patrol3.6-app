@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>巡回点検システム V4.2 (履歴全保存版)</title>
+    <title>巡回点検システム V4.3 (リンク修正版)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -52,7 +52,7 @@
 <body>
 
     <div id="setup-page" class="page active" style="text-align:center; padding-top:40px;">
-        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V4.2</span></h2>
+        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V4.3</span></h2>
         <p style="color:#aaa; font-size:0.9rem; padding:0 20px;">交代時は名前を書き換えて[起動]を押してください</p>
         
         <div style="margin: 30px 15px; background:#222; padding:20px; border-radius:12px; border:1px solid #444;">
@@ -198,7 +198,6 @@
         return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
     }
 
-    // 【V4.2仕様変更】履歴をすべて配列として末尾に追加していく（上書き廃止）
     async function doLog(txt, isManual = false) {
         if (isProcessing && !isManual) return;
         isProcessing = true;
@@ -213,7 +212,6 @@
         let timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
         const cleanKey = txt.replace(/[#*]/g,'');
         
-        // 1つのアクションごとに独立したオブジェクトを作って履歴に追加
         const newLog = {
             type: "SCAN",
             area: cleanKey,
@@ -236,7 +234,6 @@
         } else { isProcessing = false; }
     }
 
-    // 最新の入力内容（UIへの初期値反映用）
     function getLatestCheckValue(cleanKey) {
         let timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
         let res = { r1: "", r1note: "", r2: "", r2note: "" };
@@ -287,7 +284,6 @@
         }).join('');
     }
 
-    // 【V4.2新機能】点検入力時も毎回新しい履歴として時間とともに保存
     function updateResult(cleanKey, field, val) {
         let timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
         const newCheckLog = {
@@ -303,7 +299,7 @@
         localStorage.setItem('myPatrolTimeline', JSON.stringify(timeline));
     }
 
-    // 【V4.2大改修】タイムラインをそのまま時系列の行としてExcel出力。打刻も点検もすべての時間が別々に出ます
+    // 【修正】標準的なGoogleマップのURLフォーマットに完全修正
     function downloadExcel() {
         const timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
         if (timeline.length === 0) { alert("保存するデータがありません"); return; }
@@ -319,7 +315,7 @@
             if(log.type === "SCAN") {
                 actionName = "📸 QRコード打刻";
                 contentVal = log.db ? log.db + " dB" : "打刻完了";
-                if (log.lat && log.lng) mapLink = `http://googleusercontent.com/maps.google.com/?q=${log.lat},${log.lng}`;
+                if (log.lat && log.lng) mapLink = `https://www.google.com/maps?q=${log.lat},${log.lng}`;
             } else if(log.type === "CHECK") {
                 if(log.field === "r1") { actionName = "📋 点検1 結果入力"; contentVal = log.val; }
                 else if(log.field === "r1note") { actionName = "📋 点検1 メモ入力"; noteVal = log.val; }
@@ -327,7 +323,6 @@
                 else if(log.field === "r2note") { actionName = "📋 点検2 メモ入力"; noteVal = log.val; }
             }
 
-            // 空白の入力イベントなどはスキップして見やすくする
             if(log.type === "CHECK" && !log.val) return;
 
             excelData.push([
@@ -351,7 +346,7 @@
         XLSX.writeFile(wb, `巡回タイムライン報告_${fileDate}.xlsx`);
     }
 
-    // メールの本文生成も新しいタイムライン形式に対応
+    // 【修正】メール本文内の位置情報リンクURLも確実に開くように修正
     function sendReport() {
         const timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
         if (timeline.length === 0) { alert("報告するデータがありません"); return; }
@@ -366,6 +361,9 @@
         timeline.forEach(log => {
             if(log.type === "SCAN") {
                 body += `[${log.date} ${log.time}] 📸 ${log.area} 打刻 (担当:${log.inspector}) / 騒音:${log.db||'--'}dB\n`;
+                if (log.lat && log.lng) {
+                    body += `  └ 位置情報: https://www.google.com/maps?q=${log.lat},${log.lng}\n`;
+                }
             } else if(log.type === "CHECK" && log.val) {
                 let fName = log.field.includes("r1") ? "点検1" : "点検2";
                 let tName = log.field.includes("note") ? "メモ" : "結果";
@@ -384,7 +382,6 @@
         const logDiv = document.getElementById('statusLog');
         const timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
         let html = "";
-        // 直近の打刻を表示
         timeline.filter(l => l.type === "SCAN").reverse().slice(0, 5).forEach(log => {
             html += `<div class="log-entry">✅ ${log.area} (${log.time}) - ${log.inspector}</div>`;
         });
