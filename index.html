@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>巡回点検システム V4.5 (GPSバグ修正版)</title>
+    <title>巡回点検システム V4.6 (メール本文スリム化版)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -52,7 +52,7 @@
 <body>
 
     <div id="setup-page" class="page active" style="text-align:center; padding-top:40px;">
-        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V4.5</span></h2>
+        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V4.6</span></h2>
         <p style="color:#aaa; font-size:0.9rem; padding:0 20px;">交代時は名前を書き換えて[起動]を押してください</p>
         
         <div style="margin: 30px 15px; background:#222; padding:20px; border-radius:12px; border:1px solid #444;">
@@ -182,7 +182,6 @@
             if (!navigator.geolocation) { resolve({ lat: null, lng: null }); return; }
             navigator.geolocation.getCurrentPosition(
                 (position) => { 
-                    // 【改善】Googleマップがエラーを起こさないよう、あらかじめ小数点以下6桁に丸めて保存する
                     const latFixed = parseFloat(position.coords.latitude.toFixed(6));
                     const lngFixed = parseFloat(position.coords.longitude.toFixed(6));
                     resolve({ lat: latFixed, lng: lngFixed }); 
@@ -319,7 +318,6 @@
             if(log.type === "SCAN") {
                 actionName = "📸 QRコード打刻";
                 contentVal = log.db ? log.db + " dB" : "打刻完了";
-                // 【修正】標準的な検索クエリ「?q=緯度,経度」のURL文字列連携に修正
                 if (log.lat && log.lng) mapLink = `https://www.google.com/maps?q=${log.lat},${log.lng}`;
             } else if(log.type === "CHECK") {
                 if(log.field === "r1") { actionName = "📋 点検1 結果入力"; contentVal = log.val; }
@@ -351,6 +349,7 @@
         XLSX.writeFile(wb, `巡回タイムライン報告_${fileDate}.xlsx`);
     }
 
+    // 【修正】メール報告時に「QRコードの打刻履歴（SCAN）」のみを出力するように変更
     function sendReport() {
         const timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
         if (timeline.length === 0) { alert("報告するデータがありません"); return; }
@@ -360,22 +359,19 @@
         const mailTo = localStorage.getItem('myPatrolEmail') || "";
         
         let body = `${summaryStatus}\n報告送信日時: ${getTodayDateString()} ${getNowTimeString()}\n\n`;
-        body += "＜巡回・点検 時系列全履歴＞\n-----------------------\n";
+        body += "＜巡回QRコード 打刻履歴＞\n-----------------------\n";
 
         timeline.forEach(log => {
+            // タイプが「SCAN（QRコード打刻）」のものだけをメール本文に記載する
             if(log.type === "SCAN") {
                 body += `[${log.date} ${log.time}] 📸 ${log.area} 打刻 (担当:${log.inspector}) / 騒音:${log.db||'--'}dB\n`;
-                // 【修正】標準的な検索クエリ「?q=緯度,経度」のURL文字列連携に修正
                 if (log.lat && log.lng) {
                     body += `  └ 位置情報: https://www.google.com/maps?q=${log.lat},${log.lng}\n`;
                 }
-            } else if(log.type === "CHECK" && log.val) {
-                let fName = log.field.includes("r1") ? "点検1" : "点検2";
-                let tName = log.field.includes("note") ? "メモ" : "結果";
-                body += `[${log.date} ${log.time}] 📋 ${log.area} ${fName}の${tName}入力 ➡️ 「${log.val}」 (担当:${log.inspector})\n`;
             }
         });
         body += "-----------------------\n";
+        body += "※詳細な点検項目およびメモ内容については、添付のExcelファイルをご確認ください。\n";
 
         const mailSubject = `${summaryStatus} 巡回最終報告 (${getTodayDateString()})`;
         location.href = `mailto:${mailTo}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(body)}`;
