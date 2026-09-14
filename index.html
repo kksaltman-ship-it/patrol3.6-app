@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>巡回点検システム V5.0</title>
+    <title>巡回点検システム V5.1</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -34,7 +34,6 @@
         .btn-gray { background: #555; }
         .btn-small { width: auto; padding: 8px 15px; font-size: 0.9rem; margin-bottom: 0; }
         .btn-red-outline { background: none; border: 1px solid #ff5252; color: #ff5252; }
-        .btn-danger { background: #dc3545; }
         
         #reader { width: 100%; max-width: 400px; margin: 0 auto; border-radius: 12px; overflow: hidden; background: #000; border: 5px solid transparent; }
         .db-display { font-size: 3rem; font-weight: bold; color: #ffeb3b; text-align: center; margin: 10px 0; }
@@ -58,7 +57,7 @@
 
     <!-- 1. トップ（起動・管理ハブ）画面 -->
     <div id="setup-page" class="page active" style="text-align:center; padding-top:20px;">
-        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V5.0</span></h2>
+        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V5.1</span></h2>
         
         <div style="margin: 20px 0; background:#222; padding:20px; border-radius:12px; border:1px solid #444;">
             <label style="display:block; margin-bottom:10px; font-weight:bold; color:#ffeb3b;">👤 点検担当者名</label>
@@ -113,7 +112,7 @@
         </div>
     </div>
 
-    <!-- 4. 設定画面モーダル（トップ画面等から呼び出し） -->
+    <!-- 4. 設定画面モーダル -->
     <div id="config-ui">
         <h3>⚙ システム設定</h3>
         <div class="config-section">
@@ -121,13 +120,17 @@
             <input type="email" id="cfgEmail" style="width:100%; box-sizing:border-box;" placeholder="example@mail.com">
         </div>
         <div class="config-section">
-            <label style="display:block; margin-bottom:10px; color:#ffeb3b;">⏱ 静止検知タイマー（無振動検知）</label>
+            <label style="display:block; margin-bottom:10px; color:#ffeb3b;">🛡️ 安全検知モード</label>
+            <select id="cfgSafetyMode" style="width:100%; padding:10px; border-radius:5px; margin-bottom:10px;">
+                <option value="motion">静止検知のみ（動きがない場合通知）</option>
+                <option value="fall_motion">転倒＋1分間静止チェック（ハイブリッド推奨）</option>
+                <option value="off">OFF（安全検知機能を無効化）</option>
+            </select>
+            <label style="display:block; margin-bottom:5px; color:#aaa; font-size:0.85rem;">静止判定タイマー（分）</label>
             <select id="cfgMotionTimer" style="width:100%; padding:10px; border-radius:5px;">
-                <option value="0">OFF（静止検知機能を使わない）</option>
-                <option value="1">1 分間動きがない場合通知</option>
-                <option value="3">3 分間動きがない場合通知 (推奨)</option>
-                <option value="5">5 分間動きがない場合通知</option>
-                <option value="10">10 分間動きがない場合通知</option>
+                <option value="1">1 分間</option>
+                <option value="3" selected>3 分間 (標準)</option>
+                <option value="5">5 分間</option>
             </select>
         </div>
         <div class="config-section">
@@ -141,15 +144,14 @@
 
     <!-- 5. 緊急SOS警告オーバーレイ -->
     <div id="sos-overlay">
-        <h1 style="font-size:2.2rem; margin-top:20px;">🚨 動きを検知できません</h1>
-        <p style="font-size:1.1rem;">一定時間スマホの動きがありませんでした。</p>
-        <div style="font-size:4rem; font-weight:bold; margin:30px 0;" id="sos-countdown">15</div>
-        <p style="font-size:1rem; margin-bottom:30px;">応答がない場合、最新の位置情報とともに緊急メールが自動起動します。</p>
+        <h1 style="font-size:2rem; margin-top:20px;">🚨 異常・動き停止を検知</h1>
+        <p style="font-size:1rem;" id="sos-cause-msg">一定時間動きが確認できませんでした。</p>
+        <div style="font-size:4rem; font-weight:bold; margin:20px 0;" id="sos-countdown">15</div>
+        <p style="font-size:0.9rem; margin-bottom:30px;">応答がない場合、最新の位置情報とともに緊急メールを自動起動します。</p>
         <button onclick="cancelSOS()" class="btn btn-green" style="padding:20px; font-size:1.5rem;">無事です（キャンセル）</button>
     </div>
 
 <script>
-    // デフォルトの初期エリア名リスト（初回時およびリセット時に使用）
     const DEFAULT_AREAS = [
         "第1工場 ボイラー室#",
         "第2工場 コンプレッサー*",
@@ -161,8 +163,10 @@
     let isProcessing = false;
     let savedScrollPositions = {};
 
-    // 静止検知用変数
+    // 安全機能用変数
     let lastMotionTime = Date.now();
+    let isImpactDetected = false;
+    let impactTime = 0;
     let motionCheckInterval = null;
     let sosCountdownInterval = null;
     let sosTimeLeft = 15;
@@ -208,43 +212,63 @@
             }
             setupManualSelect();
             refreshLogDisplay();
-            startMotionDetection(); // 静止検知の開始
+            startSafetyDetection();
         } catch (err) {
             alert("カメラ・マイク・位置情報の使用を許可してください。");
         }
     }
 
-    // 静止検知（加速度センサー監視）
-    function startMotionDetection() {
-        const timerMinutes = parseInt(localStorage.getItem('myPatrolMotionTimer') || "3");
-        if(timerMinutes === 0) return; // OFF設定の場合
+    // 安全監視センサー（転倒＋静止ロジック）
+    function startSafetyDetection() {
+        const mode = localStorage.getItem('myPatrolSafetyMode') || "fall_motion";
+        if(mode === "off") return;
 
         lastMotionTime = Date.now();
+        isImpactDetected = false;
 
-        // 動き（揺れ）の検知
         window.addEventListener('devicemotion', (event) => {
             const acc = event.accelerationIncludingGravity;
             if(!acc) return;
-            const totalAcc = Math.abs(acc.x || 0) + Math.abs(acc.y || 0) + Math.abs(acc.z || 0);
-            // わずかな動きでも変化があれば時間を更新
-            if (totalAcc > 1.5) {
+            const totalAcc = Math.sqrt(acc.x*acc.x + acc.y*acc.y + acc.z*acc.z);
+
+            // 1. 衝撃（転倒）の検知（閾値: 約25G以上の急激な加速）
+            if (mode === "fall_motion" && totalAcc > 25) {
+                isImpactDetected = true;
+                impactTime = Date.now();
+            }
+
+            // 2. 動き（復帰・歩行）の検知
+            if (Math.abs(totalAcc - 9.8) > 2.0) {
                 lastMotionTime = Date.now();
+                // 衝撃を検知していても、その後動行を検知できたら「無事（自動復帰）」と判定してリセット
+                if (isImpactDetected && (Date.now() - impactTime > 3000)) {
+                    isImpactDetected = false; 
+                }
             }
         });
 
-        // 定期判定タイマー（10秒ごとにチェック）
         if(motionCheckInterval) clearInterval(motionCheckInterval);
         motionCheckInterval = setInterval(() => {
-            const limitTime = timerMinutes * 60 * 1000;
-            if (Date.now() - lastMotionTime > limitTime) {
-                triggerSOS();
+            const timerMinutes = parseInt(localStorage.getItem('myPatrolMotionTimer') || "3");
+            const now = Date.now();
+
+            // パターンA: 転倒検知後に1分間動きがない場合
+            if (isImpactDetected && (now - impactTime > 60000) && (now - lastMotionTime > 60000)) {
+                triggerSOS("衝撃（転倒）検知後、1分間動きが確認できません。");
+                return;
             }
-        }, 10000);
+
+            // パターンB: 通常の静止（指定時間動きがない場合）
+            if (now - lastMotionTime > timerMinutes * 60 * 1000) {
+                triggerSOS(`一定時間（${timerMinutes}分間）動きが確認できません。`);
+            }
+        }, 5000);
     }
 
-    function triggerSOS() {
+    function triggerSOS(msg) {
         if(document.getElementById('sos-overlay').style.display === 'block') return;
         
+        document.getElementById('sos-cause-msg').innerText = msg;
         document.getElementById('sos-overlay').style.display = 'block';
         sosTimeLeft = 15;
         document.getElementById('sos-countdown').innerText = sosTimeLeft;
@@ -262,7 +286,8 @@
     function cancelSOS() {
         clearInterval(sosCountdownInterval);
         document.getElementById('sos-overlay').style.display = 'none';
-        lastMotionTime = Date.now(); // タイマーリセット
+        lastMotionTime = Date.now();
+        isImpactDetected = false;
     }
 
     async function executeSOSMail() {
@@ -275,8 +300,8 @@
             mapLink = `https://www.google.com/maps?q=${coords.lat},${coords.lng}`;
         }
 
-        const subject = `🚨【緊急SOS】作業者動作停止警告 (${inspector})`;
-        const body = `【緊急自動送信通知】\n作業者の動きが一定時間確認できませんでした。\n\n担当者名: ${inspector}\n発生時刻: ${getTodayDateString()} ${getNowTimeString()}\n現在位置: ${mapLink}\n\n至急、現場の状況確認を行ってください。`;
+        const subject = `🚨【緊急SOS】作業者異常・動作停止警告 (${inspector})`;
+        const body = `【緊急自動送信通知】\n作業者の衝撃または一定時間の動作停止を検知しました。\n\n担当者名: ${inspector}\n発生時刻: ${getTodayDateString()} ${getNowTimeString()}\n現在位置: ${mapLink}\n\n至急、現場の状況確認を行ってください。`;
         
         location.href = `mailto:${mailTo}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     }
@@ -295,9 +320,7 @@
             if (!navigator.geolocation) { resolve({ lat: null, lng: null }); return; }
             navigator.geolocation.getCurrentPosition(
                 (position) => { 
-                    const latFixed = parseFloat(position.coords.latitude.toFixed(6));
-                    const lngFixed = parseFloat(position.coords.longitude.toFixed(6));
-                    resolve({ lat: latFixed, lng: lngFixed }); 
+                    resolve({ lat: parseFloat(position.coords.latitude.toFixed(6)), lng: parseFloat(position.coords.longitude.toFixed(6)) }); 
                 },
                 (error) => { resolve({ lat: null, lng: null }); },
                 { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
@@ -318,7 +341,7 @@
     async function doLog(txt, isManual = false) {
         if (isProcessing && !isManual) return;
         isProcessing = true;
-        lastMotionTime = Date.now(); // スキャン時にも動作時刻更新
+        lastMotionTime = Date.now();
 
         const statusDiv = document.getElementById('scan-status');
         if(!isManual) {
@@ -405,16 +428,11 @@
     function updateResult(cleanKey, field, val) {
         lastMotionTime = Date.now();
         let timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
-        const newCheckLog = {
-            type: "CHECK",
-            area: cleanKey,
-            field: field,
-            val: val,
-            date: getTodayDateString(),
-            time: getNowTimeString(),
+        timeline.push({
+            type: "CHECK", area: cleanKey, field: field, val: val,
+            date: getTodayDateString(), time: getNowTimeString(),
             inspector: localStorage.getItem('myPatrolInspector') || "未登録"
-        };
-        timeline.push(newCheckLog);
+        });
         localStorage.setItem('myPatrolTimeline', JSON.stringify(timeline));
     }
 
@@ -439,7 +457,6 @@
             }
 
             if(log.type === "CHECK" && !log.val) return;
-
             excelData.push([ log.date, log.time, log.inspector, log.area, actionName, contentVal, noteVal, mapLink ]);
         });
 
@@ -448,8 +465,7 @@
         XLSX.utils.book_append_sheet(wb, ws, "タイムライン履歴");
         
         const d = new Date();
-        const fileDate = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
-        XLSX.writeFile(wb, `巡回タイムライン報告_${fileDate}.xlsx`);
+        XLSX.writeFile(wb, `巡回タイムライン報告_${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}.xlsx`);
     }
 
     function sendReport() {
@@ -471,8 +487,7 @@
                 }
             }
         });
-        body += "-----------------------\n";
-        body += "※詳細な点検項目およびメモ内容については、添付のExcelファイルをご確認ください。\n";
+        body += "-----------------------\n※詳細な点検内容・メモは添付のExcelファイルをご確認ください。\n";
 
         const mailSubject = `${summaryStatus} 巡回最終報告 (${getTodayDateString()})`;
         location.href = `mailto:${mailTo}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(body)}`;
@@ -511,10 +526,10 @@
     function toggleConfig() {
         const ui = document.getElementById('config-ui');
         if(ui.style.display==='none' || !ui.style.display){
-            // 保存済みのエリア、なければデフォルト初期値をテキストエリアに表示
             const currentAreas = JSON.parse(localStorage.getItem('myPatrolAreas')) || DEFAULT_AREAS;
             document.getElementById('cfgAreas').value = currentAreas.join('\n');
             document.getElementById('cfgEmail').value = localStorage.getItem('myPatrolEmail') || "";
+            document.getElementById('cfgSafetyMode').value = localStorage.getItem('myPatrolSafetyMode') || "fall_motion";
             document.getElementById('cfgMotionTimer').value = localStorage.getItem('myPatrolMotionTimer') || "3";
             ui.style.display='block';
         } else { ui.style.display='none'; }
@@ -522,6 +537,7 @@
 
     function saveConfig() {
         localStorage.setItem('myPatrolEmail', document.getElementById('cfgEmail').value);
+        localStorage.setItem('myPatrolSafetyMode', document.getElementById('cfgSafetyMode').value);
         localStorage.setItem('myPatrolMotionTimer', document.getElementById('cfgMotionTimer').value);
         
         const areaLines = document.getElementById('cfgAreas').value.split('\n').map(a => a.trim()).filter(a => a);
@@ -535,7 +551,6 @@
         if(localStorage.getItem('myPatrolInspector')) {
             document.getElementById('inspectorName').value = localStorage.getItem('myPatrolInspector');
         }
-        // 初回起動時、エリア初期値をローカルストレージへ自動セット
         if(!localStorage.getItem('myPatrolAreas')) {
             localStorage.setItem('myPatrolAreas', JSON.stringify(DEFAULT_AREAS));
         }
