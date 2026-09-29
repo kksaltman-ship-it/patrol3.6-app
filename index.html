@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>巡回点検システム V5.1</title>
+    <title>巡回点検システム V5.2</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -57,7 +57,7 @@
 
     <!-- 1. トップ（起動・管理ハブ）画面 -->
     <div id="setup-page" class="page active" style="text-align:center; padding-top:20px;">
-        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V5.1</span></h2>
+        <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V5.2</span></h2>
         
         <div style="margin: 20px 0; background:#222; padding:20px; border-radius:12px; border:1px solid #444;">
             <label style="display:block; margin-bottom:10px; font-weight:bold; color:#ffeb3b;">👤 点検担当者名</label>
@@ -171,6 +171,25 @@
     let sosCountdownInterval = null;
     let sosTimeLeft = 15;
 
+    // 警告ビープ音を発声する関数
+    function playBuzzer() {
+        if (!audioContext) return;
+        try {
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(880, audioContext.currentTime); // 880Hz
+            gain.gain.setValueAtTime(0.1, audioContext.currentTime);
+            osc.connect(gain);
+            gain.connect(audioContext.destination);
+            osc.start();
+            osc.stop(audioContext.currentTime + 0.3);
+        } catch(e) { console.log(e); }
+    }
+
     function showPage(pageId) {
         const currentPage = document.querySelector('.page.active');
         if (currentPage) savedScrollPositions[currentPage.id] = window.scrollY;
@@ -205,6 +224,9 @@
                 audioContext.createMediaStreamSource(stream).connect(analyser);
                 updateDb();
             }
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
             showPage('scan-page');
             if(!html5QrCode) {
                 html5QrCode = new Html5Qrcode("reader");
@@ -231,16 +253,13 @@
             if(!acc) return;
             const totalAcc = Math.sqrt(acc.x*acc.x + acc.y*acc.y + acc.z*acc.z);
 
-            // 1. 衝撃（転倒）の検知（閾値: 約25G以上の急激な加速）
             if (mode === "fall_motion" && totalAcc > 25) {
                 isImpactDetected = true;
                 impactTime = Date.now();
             }
 
-            // 2. 動き（復帰・歩行）の検知
             if (Math.abs(totalAcc - 9.8) > 2.0) {
                 lastMotionTime = Date.now();
-                // 衝撃を検知していても、その後動行を検知できたら「無事（自動復帰）」と判定してリセット
                 if (isImpactDetected && (Date.now() - impactTime > 3000)) {
                     isImpactDetected = false; 
                 }
@@ -252,13 +271,11 @@
             const timerMinutes = parseInt(localStorage.getItem('myPatrolMotionTimer') || "3");
             const now = Date.now();
 
-            // パターンA: 転倒検知後に1分間動きがない場合
             if (isImpactDetected && (now - impactTime > 60000) && (now - lastMotionTime > 60000)) {
                 triggerSOS("衝撃（転倒）検知後、1分間動きが確認できません。");
                 return;
             }
 
-            // パターンB: 通常の静止（指定時間動きがない場合）
             if (now - lastMotionTime > timerMinutes * 60 * 1000) {
                 triggerSOS(`一定時間（${timerMinutes}分間）動きが確認できません。`);
             }
@@ -273,9 +290,13 @@
         sosTimeLeft = 15;
         document.getElementById('sos-countdown').innerText = sosTimeLeft;
 
+        playBuzzer();
+
         sosCountdownInterval = setInterval(async () => {
             sosTimeLeft--;
             document.getElementById('sos-countdown').innerText = sosTimeLeft;
+            playBuzzer();
+
             if(sosTimeLeft <= 0) {
                 clearInterval(sosCountdownInterval);
                 await executeSOSMail();
@@ -361,7 +382,8 @@
             inspector: localStorage.getItem('myPatrolInspector') || "未登録",
             db: currentDb,
             lat: coords.lat,
-            lng: coords.lng
+            lng: coords.lng,
+            timestamp: Date.now()
         };
         
         timeline.push(newLog);
@@ -419,7 +441,7 @@
                         <option value="×" ${res.r2==='×'?'selected':''}>× 異常あり</option>
                         <option value="-" ${res.r2==='-'?'selected':''}>- 省略</option>
                     </select>
-                    <input type="text" placeholder="メモ" value="${res.r2note||''}" onchange="updateResult('${cleanKey}','r2note',this.value)">
+                    <input type="text" placeholder="メモ" value="${res.r2note\vert{}\vert{}''}" onchange="updateResult('${cleanKey}','r2note',this.value)">
                 </div>` : ''}
             </div>`;
         }).join('');
@@ -431,7 +453,8 @@
         timeline.push({
             type: "CHECK", area: cleanKey, field: field, val: val,
             date: getTodayDateString(), time: getNowTimeString(),
-            inspector: localStorage.getItem('myPatrolInspector') || "未登録"
+            inspector: localStorage.getItem('myPatrolInspector') || "未登録",
+            timestamp: Date.now()
         });
         localStorage.setItem('myPatrolTimeline', JSON.stringify(timeline));
     }
@@ -468,6 +491,7 @@
         XLSX.writeFile(wb, `巡回タイムライン報告_${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}.xlsx`);
     }
 
+    // メール報告生成機能（改修版：冒頭に時間帯要約＋下部に1列履歴）
     function sendReport() {
         const timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
         if (timeline.length === 0) { alert("報告するデータがありません"); return; }
@@ -476,14 +500,56 @@
         const summaryStatus = isNormal ? "【巡回結果：異常なし】" : "【巡回結果：★異常あり★】";
         const mailTo = localStorage.getItem('myPatrolEmail') || "";
         
-        let body = `${summaryStatus}\n報告送信日時: ${getTodayDateString()} ${getNowTimeString()}\n\n`;
-        body += "＜巡回QRコード 打刻履歴＞\n-----------------------\n";
+        const scanLogs = timeline.filter(log => log.type === "SCAN");
 
+        // --- 巡回ごとのセッション自動切り分け（打刻間隔30分以上で次回の巡回とみなす） ---
+        let sessions = [];
+        let currentSession = [];
+
+        scanLogs.forEach((log) => {
+            if (currentSession.length === 0) {
+                currentSession.push(log);
+            } else {
+                const prevLog = currentSession[currentSession.length - 1];
+                const prevTime = prevLog.timestamp || new Date(`${prevLog.date} ${prevLog.time.replace('(手)','')}`).getTime();
+                const currTime = log.timestamp || new Date(`${log.date} ${log.time.replace('(手)','')}`).getTime();
+
+                // 30分（1800000ミリ秒）以上空いていれば別セッションと判定
+                if (currTime - prevTime > 1800000) {
+                    sessions.push(currentSession);
+                    currentSession = [log];
+                } else {
+                    currentSession.push(log);
+                }
+            }
+        });
+        if (currentSession.length > 0) sessions.push(currentSession);
+
+        // --- メール本文構築 ---
+        let body = `${summaryStatus}\n報告送信日時: ${getTodayDateString()} ${getNowTimeString()}\n\n`;
+        
+        // 1. 各巡回の実施時間サマリー表示
+        body += "【巡回実施状況】\n";
+        if (sessions.length > 0) {
+            sessions.forEach((sess, idx) => {
+                const startTime = sess[0].time.replace('(手)', '');
+                const endTime = sess[sess.length - 1].time.replace('(手)', '');
+                const cleanStart = startTime.length > 5 ? startTime.substring(0, 5) : startTime;
+                const cleanEnd = endTime.length > 5 ? endTime.substring(0, 5) : endTime;
+                body += `・第${idx + 1}回巡回：${cleanStart} ～ ${cleanEnd}\n`;
+            });
+        } else {
+            body += "・打刻データなし\n";
+        }
+        body += "\n";
+
+        // 2. 詳細打刻履歴（これまで通り1列で時系列表示）
+        body += "＜巡回QRコード 打刻履歴＞\n-----------------------\n";
         timeline.forEach(log => {
             if(log.type === "SCAN") {
                 body += `[${log.date} ${log.time}] 📸 ${log.area} 打刻 (担当:${log.inspector}) / 騒音:${log.db||'--'}dB\n`;
                 if (log.lat && log.lng) {
-                    body += `  └ 位置情報: https://www.google.com/maps?q=${log.lat},${log.lng}\n`;
+                    body += `   └ 位置情報: https://www.google.com/maps?q=${log.lat},${log.lng}\n`;
                 }
             }
         });
