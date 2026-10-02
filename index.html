@@ -6,7 +6,7 @@
     <title>巡回点検システム V5.2</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <style>
         body { font-family: sans-serif; background: #1a1a1a; color: white; margin: 0; padding: 0; }
         .page { display: none; padding: 15px; box-sizing: border-box; }
@@ -49,13 +49,12 @@
         #config-ui { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:9999; padding:20px; box-sizing:border-box; overflow-y: auto; }
         .config-section { background: #222; padding: 15px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #444; }
 
-        /* SOSアラート画面 */
         #sos-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(218, 0, 0, 0.95); z-index:10000; text-align:center; padding:30px 20px; box-sizing:border-box; }
     </style>
 </head>
 <body>
 
-    <!-- 1. トップ（起動・管理ハブ）画面 -->
+    <!-- 1. トップ画面 -->
     <div id="setup-page" class="page active" style="text-align:center; padding-top:20px;">
         <h2>巡回点検システム <span style="font-size:1rem; color:#aaa;">V5.2</span></h2>
         
@@ -142,7 +141,7 @@
         <button onclick="toggleConfig()" class="btn btn-gray">キャンセル</button>
     </div>
 
-    <!-- 5. 緊急SOS警告オーバーレイ -->
+    <!-- 5. 緊急SOSオーバーレイ -->
     <div id="sos-overlay">
         <h1 style="font-size:2rem; margin-top:20px;">🚨 異常・動き停止を検知</h1>
         <p style="font-size:1rem;" id="sos-cause-msg">一定時間動きが確認できませんでした。</p>
@@ -163,7 +162,6 @@
     let isProcessing = false;
     let savedScrollPositions = {};
 
-    // 安全機能用変数
     let lastMotionTime = Date.now();
     let isImpactDetected = false;
     let impactTime = 0;
@@ -218,6 +216,8 @@
         localStorage.setItem('myPatrolInspector', nameInput);
         document.getElementById('nav-worker-name').innerText = nameInput;
 
+        showPage('scan-page');
+
         try {
             if (!audioContext) {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
@@ -226,26 +226,25 @@
                 audioContext.createMediaStreamSource(stream).connect(analyser);
                 updateDb();
             }
-            if (audioContext.state === 'suspended') {
+            if (audioContext && audioContext.state === 'suspended') {
                 await audioContext.resume();
             }
-            
-            showPage('scan-page');
+        } catch (err) {
+            console.warn("マイク/カメラアクセスエラー:", err);
+        }
 
+        try {
             if(!html5QrCode) {
                 html5QrCode = new Html5Qrcode("reader");
                 await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => { doLog(txt); });
             }
-            setupManualSelect();
-            refreshLogDisplay();
-            
-            // 安全監視機能をバックグラウンドで開始（非同期エラーで起動が止まらないよう分離）
-            startSafetyDetection();
-
-        } catch (err) {
-            console.error(err);
-            alert("カメラ・マイク・位置情報の使用を許可してください。");
+        } catch (qrErr) {
+            console.warn("QR読み取り起動エラー:", qrErr);
         }
+
+        setupManualSelect();
+        refreshLogDisplay();
+        startSafetyDetection();
     }
 
     async function startSafetyDetection() {
@@ -255,12 +254,9 @@
         if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
             try {
                 const response = await DeviceMotionEvent.requestPermission();
-                if (response !== 'granted') {
-                    console.warn("モーションセンサー利用拒否");
-                    return;
-                }
+                if (response !== 'granted') return;
             } catch (e) {
-                console.error("モーションアクセス要求エラー:", e);
+                console.error("モーション要求エラー:", e);
             }
         }
 
@@ -296,7 +292,7 @@
             }
 
             if (now - lastMotionTime > timerMinutes * 60 * 1000) {
-                triggerSOS(`一定時間（${timerMinutes}分間）動きが確認できません。`);
+                triggerSOS("一定時間（" + timerMinutes + "分間）動きが確認できません。");
             }
         }, 5000);
     }
@@ -337,13 +333,13 @@
         
         let mapLink = "位置情報取得不可";
         if(coords.lat && coords.lng) {
-            mapLink = `https://www.google.com/maps?q=${coords.lat},${coords.lng}`;
+            mapLink = "https://www.google.com/maps?q=" + coords.lat + "," + coords.lng;
         }
 
-        const subject = `🚨【緊急SOS】作業者異常・動作停止警告 (${inspector})`;
-        const body = `【緊急自動送信通知】\n作業者の衝撃または一定時間の動作停止を検知しました。\n\n担当者名: ${inspector}\n発生時刻: ${getTodayDateString()} ${getNowTimeString()}\n現在位置: ${mapLink}\n\n至急、現場の状況確認を行ってください。`;
+        const subject = "🚨【緊急SOS】作業者異常・動作停止警告 (" + inspector + ")";
+        const body = "【緊急自動送信通知】\n作業者の衝撃または一定時間の動作停止を検知しました。\n\n担当者名: " + inspector + "\n発生時刻: " + getTodayDateString() + " " + getNowTimeString() + "\n現在位置: " + mapLink + "\n\n至急、現場の状況確認を行ってください。";
         
-        location.href = `mailto:${mailTo}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        location.href = "mailto:" + mailTo + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
     }
 
     function updateDb() {
@@ -370,12 +366,12 @@
 
     function getTodayDateString() {
         const d = new Date();
-        return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+        return d.getFullYear() + "/" + (d.getMonth() + 1) + "/" + d.getDate();
     }
 
     function getNowTimeString() {
         const d = new Date();
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+        return String(d.getHours()).padStart(2, '0') + ":" + String(d.getMinutes()).padStart(2, '0') + ":" + String(d.getSeconds()).padStart(2, '0');
     }
 
     async function doLog(txt, isManual = false) {
@@ -386,7 +382,7 @@
         const statusDiv = document.getElementById('scan-status');
         if(!isManual) {
             document.getElementById('reader').style.border = "5px solid #ff9800";
-            statusDiv.innerHTML = `<div class="scan-msg" style="background:#ff9800;">🛰️ 位置情報を取得中...</div>`;
+            statusDiv.innerHTML = '<div class="scan-msg" style="background:#ff9800;">🛰️️ 位置情報を取得中...</div>';
         }
 
         const coords = await getGPSPosition();
@@ -411,7 +407,7 @@
         
         if(!isManual) {
             document.getElementById('reader').style.border = "5px solid #4caf50";
-            statusDiv.innerHTML = `<div class="scan-msg">✨ ${cleanKey} を記録</div>`;
+            statusDiv.innerHTML = '<div class="scan-msg">✨ ' + cleanKey + ' を記録</div>';
             setTimeout(() => { isProcessing = false; document.getElementById('reader').style.border = "5px solid transparent"; }, 3000);
         } else { isProcessing = false; }
     }
@@ -438,32 +434,40 @@
             container.innerHTML = "<p style='color:#888; text-align:center;'>設定から点検エリアを登録してください</p>";
             return;
         }
-        container.innerHTML = targets.map(area => {
+        
+        let html = "";
+        for(let i = 0; i < targets.length; i++) {
+            const area = targets[i];
             const cleanKey = area.replace(/[#*]/g,'');
             const res = getLatestCheckValue(cleanKey);
             const isSingle = area.endsWith('*');
-            return `<div class="card">
-                <h4 style="margin:0 0 10px 0; color:#ffeb3b;">📍 ${cleanKey}</h4>
-                <div class="row">
-                    <select onchange="updateResult('${cleanKey}','r1',this.value)">
-                        <option value="">点検1</option>
-                        <option value="○" ${res.r1==='○'?'selected':''}>○ 異常なし</option>
-                        <option value="×" ${res.r1==='×'?'selected':''}>× 異常あり</option>
-                        <option value="-" ${res.r1==='-'?'selected':''}>- 省略</option>
-                    </select>
-                    <input type="text" placeholder="メモ" value="${res.r1note || ''}" onchange="updateResult('${cleanKey}','r1note',this.value)">
-                </div>
-                ${!isSingle ? `<div class="row">
-                    <select onchange="updateResult('${cleanKey}','r2',this.value)">
-                        <option value="">点検2</option>
-                        <option value="○" ${res.r2==='○'?'selected':''}>○ 異常なし</option>
-                        <option value="×" ${res.r2==='×'?'selected':''}>× 異常あり</option>
-                        <option value="-" ${res.r2==='-'?'selected':''}>- 省略</option>
-                    </select>
-                    <input type="text" placeholder="メモ" value="${res.r2note \vert{}\vert{} ''}" onchange="updateResult('${cleanKey}','r2note',this.value)">
-                </div>` : ''}
-            </div>`;
-        }).join('');
+            
+            html += '<div class="card">';
+            html += '<h4 style="margin:0 0 10px 0; color:#ffeb3b;">📍 ' + cleanKey + '</h4>';
+            html += '<div class="row">';
+            html += '<select onchange="updateResult(\'' + cleanKey + '\',\'r1\',this.value)">';
+            html += '<option value="">点検1</option>';
+            html += '<option value="○" ' + (res.r1==='○'?'selected':'') + '>○ 異常なし</option>';
+            html += '<option value="×" ' + (res.r1==='×'?'selected':'') + '>× 異常あり</option>';
+            html += '<option value="-" ' + (res.r1==='-'?'selected':'') + '>- 省略</option>';
+            html += '</select>';
+            html += '<input type="text" placeholder="メモ" value="' + (res.r1note || '') + '" onchange="updateResult(\'' + cleanKey + '\',\'r1note\',this.value)">';
+            html += '</div>';
+            
+            if(!isSingle) {
+                html += '<div class="row">';
+                html += '<select onchange="updateResult(\'' + cleanKey + '\',\'r2\',this.value)">';
+                html += '<option value="">点検2</option>';
+                html += '<option value="○" ' + (res.r2==='○'?'selected':'') + '>○ 異常なし</option>';
+                html += '<option value="×" ' + (res.r2==='×'?'selected':'') + '>× 異常あり</option>';
+                html += '<option value="-" ' + (res.r2==='-'?'selected':'') + '>- 省略</option>';
+                html += '</select>';
+                html += '<input type="text" placeholder="メモ" value="' + (res.r2note || '') + '" onchange="updateResult(\'' + cleanKey + '\',\'r2note\',this.value)">';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+        container.innerHTML = html;
     }
 
     function updateResult(cleanKey, field, val) {
@@ -490,7 +494,7 @@
             if(log.type === "SCAN") {
                 actionName = "📸 QRコード打刻";
                 contentVal = log.db ? log.db + " dB" : "打刻完了";
-                if (log.lat && log.lng) mapLink = `https://www.google.com/maps?q=${log.lat},${log.lng}`;
+                if (log.lat && log.lng) mapLink = "https://www.google.com/maps?q=" + log.lat + "," + log.lng;
             } else if(log.type === "CHECK") {
                 if(log.field === "r1") { actionName = "📋 点検1 結果入力"; contentVal = log.val; }
                 else if(log.field === "r1note") { actionName = "📋 点検1 メモ入力"; noteVal = log.val; }
@@ -507,7 +511,7 @@
         XLSX.utils.book_append_sheet(wb, ws, "タイムライン履歴");
         
         const d = new Date();
-        XLSX.writeFile(wb, `巡回タイムライン報告_${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}.xlsx`);
+        XLSX.writeFile(wb, "巡回タイムライン報告_" + d.getFullYear() + "-" + (d.getMonth()+1) + "-" + d.getDate() + ".xlsx");
     }
 
     function sendReport() {
@@ -528,8 +532,8 @@
                 currentSession.push(log);
             } else {
                 const prevLog = currentSession[currentSession.length - 1];
-                const prevTime = prevLog.timestamp || new Date(`${prevLog.date} ${prevLog.time.replace('(手)','')}`).getTime();
-                const currTime = log.timestamp || new Date(`${log.date} ${log.time.replace('(手)','')}`).getTime();
+                const prevTime = prevLog.timestamp || new Date(prevLog.date + " " + prevLog.time.replace('(手)','')).getTime();
+                const currTime = log.timestamp || new Date(log.date + " " + log.time.replace('(手)','')).getTime();
 
                 if (currTime - prevTime > 1800000) {
                     sessions.push(currentSession);
@@ -541,7 +545,7 @@
         });
         if (currentSession.length > 0) sessions.push(currentSession);
 
-        let body = `${summaryStatus}\n報告送信日時: ${getTodayDateString()} ${getNowTimeString()}\n\n`;
+        let body = summaryStatus + "\n報告送信日時: " + getTodayDateString() + " " + getNowTimeString() + "\n\n";
         
         body += "【巡回実施状況】\n";
         if (sessions.length > 0) {
@@ -550,7 +554,7 @@
                 const endTime = sess[sess.length - 1].time.replace('(手)', '');
                 const cleanStart = startTime.length > 5 ? startTime.substring(0, 5) : startTime;
                 const cleanEnd = endTime.length > 5 ? endTime.substring(0, 5) : endTime;
-                body += `・第${idx + 1}回巡回：${cleanStart} ～ ${cleanEnd}\n`;
+                body += "・第" + (idx + 1) + "回巡回：" + cleanStart + " ～ " + cleanEnd + "\n";
             });
         } else {
             body += "・打刻データなし\n";
@@ -560,16 +564,16 @@
         body += "＜巡回QRコード 打刻履歴＞\n-----------------------\n";
         timeline.forEach(log => {
             if(log.type === "SCAN") {
-                body += `[${log.date} ${log.time}] 📸 ${log.area} 打刻 (担当:${log.inspector}) / 騒音:${log.db||'--'}dB\n`;
+                body += "[" + log.date + " " + log.time + "] 📸 " + log.area + " 打刻 (担当:" + log.inspector + ") / 騒音:" + (log.db||'--') + "dB\n";
                 if (log.lat && log.lng) {
-                    body += `   └ 位置情報: https://www.google.com/maps?q=${log.lat},${log.lng}\n`;
+                    body += "   └ 位置情報: https://www.google.com/maps?q=" + log.lat + "," + log.lng + "\n";
                 }
             }
         });
         body += "-----------------------\n※詳細な点検内容・メモは添付のExcelファイルをご確認ください。\n";
 
-        const mailSubject = `${summaryStatus} 巡回最終報告 (${getTodayDateString()})`;
-        location.href = `mailto:${mailTo}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(body)}`;
+        const mailSubject = summaryStatus + " 巡回最終報告 (" + getTodayDateString() + ")";
+        location.href = "mailto:" + mailTo + "?subject=" + encodeURIComponent(mailSubject) + "&body=" + encodeURIComponent(body);
     }
 
     function clearData() {
@@ -585,7 +589,7 @@
         const timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
         let html = "";
         timeline.filter(l => l.type === "SCAN").reverse().slice(0, 5).forEach(log => {
-            html += `<div class="log-entry">✅ ${log.area} (${log.time}) - ${log.inspector}</div>`;
+            html += '<div class="log-entry">✅ ' + log.area + ' (' + log.time + ') - ' + log.inspector + '</div>';
         });
         logDiv.innerHTML = html;
     }
@@ -594,7 +598,7 @@
         const sel = document.getElementById('manualAreaSelect');
         const areas = JSON.parse(localStorage.getItem('myPatrolAreas')) || DEFAULT_AREAS;
         const targets = areas.filter(a => a.endsWith('#'));
-        sel.innerHTML = targets.map(a => `<option value="${a.replace('#','')}">${a.replace('#','')}</option>`).join('');
+        sel.innerHTML = targets.map(a => '<option value="' + a.replace('#','') + '">' + a.replace('#','') + '</option>').join('');
     }
 
     function manualLog() {
