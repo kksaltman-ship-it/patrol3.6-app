@@ -171,7 +171,6 @@
     let sosCountdownInterval = null;
     let sosTimeLeft = 15;
 
-    // 警告ビープ音を発声する関数
     function playBuzzer() {
         if (!audioContext) return;
         try {
@@ -181,7 +180,7 @@
             const osc = audioContext.createOscillator();
             const gain = audioContext.createGain();
             osc.type = 'square';
-            osc.frequency.setValueAtTime(880, audioContext.currentTime); // 880Hz
+            osc.frequency.setValueAtTime(880, audioContext.currentTime);
             gain.gain.setValueAtTime(0.1, audioContext.currentTime);
             osc.connect(gain);
             gain.connect(audioContext.destination);
@@ -206,7 +205,10 @@
     }
 
     function goToSetup() {
-        if(html5QrCode) { html5QrCode.stop().catch(e=>console.log(e)); html5QrCode = null; }
+        if(html5QrCode) { 
+            html5QrCode.stop().catch(e=>console.log(e)); 
+            html5QrCode = null; 
+        }
         showPage('setup-page');
     }
 
@@ -227,34 +229,38 @@
             if (audioContext.state === 'suspended') {
                 await audioContext.resume();
             }
+            
             showPage('scan-page');
+
             if(!html5QrCode) {
                 html5QrCode = new Html5Qrcode("reader");
                 await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => { doLog(txt); });
             }
             setupManualSelect();
             refreshLogDisplay();
-            await startSafetyDetection();
+            
+            // 安全監視機能をバックグラウンドで開始（非同期エラーで起動が止まらないよう分離）
+            startSafetyDetection();
+
         } catch (err) {
+            console.error(err);
             alert("カメラ・マイク・位置情報の使用を許可してください。");
         }
     }
 
-    // 安全監視センサー（iOS権限要求＋転倒・静止ロジック）
     async function startSafetyDetection() {
         const mode = localStorage.getItem('myPatrolSafetyMode') || "fall_motion";
         if(mode === "off") return;
 
-        // iOS (Safari) 向けモーションセンサー権限取得
         if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
             try {
                 const response = await DeviceMotionEvent.requestPermission();
                 if (response !== 'granted') {
-                    console.warn("モーションセンサーの利用が拒否されました");
+                    console.warn("モーションセンサー利用拒否");
                     return;
                 }
             } catch (e) {
-                console.error("モーションアクセス権限エラー:", e);
+                console.error("モーションアクセス要求エラー:", e);
             }
         }
 
@@ -445,7 +451,7 @@
                         <option value="×" ${res.r1==='×'?'selected':''}>× 異常あり</option>
                         <option value="-" ${res.r1==='-'?'selected':''}>- 省略</option>
                     </select>
-                    <input type="text" placeholder="メモ" value="${res.r1note||''}" onchange="updateResult('${cleanKey}','r1note',this.value)">
+                    <input type="text" placeholder="メモ" value="${res.r1note || ''}" onchange="updateResult('${cleanKey}','r1note',this.value)">
                 </div>
                 ${!isSingle ? `<div class="row">
                     <select onchange="updateResult('${cleanKey}','r2',this.value)">
@@ -454,7 +460,7 @@
                         <option value="×" ${res.r2==='×'?'selected':''}>× 異常あり</option>
                         <option value="-" ${res.r2==='-'?'selected':''}>- 省略</option>
                     </select>
-                    <input type="text" placeholder="メモ" value="${res.r2note\vert{}\vert{}''}" onchange="updateResult('${cleanKey}','r2note',this.value)">
+                    <input type="text" placeholder="メモ" value="${res.r2note \vert{}\vert{} ''}" onchange="updateResult('${cleanKey}','r2note',this.value)">
                 </div>` : ''}
             </div>`;
         }).join('');
