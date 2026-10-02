@@ -234,16 +234,29 @@
             }
             setupManualSelect();
             refreshLogDisplay();
-            startSafetyDetection();
+            await startSafetyDetection();
         } catch (err) {
             alert("カメラ・マイク・位置情報の使用を許可してください。");
         }
     }
 
-    // 安全監視センサー（転倒＋静止ロジック）
-    function startSafetyDetection() {
+    // 安全監視センサー（iOS権限要求＋転倒・静止ロジック）
+    async function startSafetyDetection() {
         const mode = localStorage.getItem('myPatrolSafetyMode') || "fall_motion";
         if(mode === "off") return;
+
+        // iOS (Safari) 向けモーションセンサー権限取得
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            try {
+                const response = await DeviceMotionEvent.requestPermission();
+                if (response !== 'granted') {
+                    console.warn("モーションセンサーの利用が拒否されました");
+                    return;
+                }
+            } catch (e) {
+                console.error("モーションアクセス権限エラー:", e);
+            }
+        }
 
         lastMotionTime = Date.now();
         isImpactDetected = false;
@@ -491,7 +504,6 @@
         XLSX.writeFile(wb, `巡回タイムライン報告_${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}.xlsx`);
     }
 
-    // メール報告生成機能（改修版：冒頭に時間帯要約＋下部に1列履歴）
     function sendReport() {
         const timeline = JSON.parse(localStorage.getItem('myPatrolTimeline')) || [];
         if (timeline.length === 0) { alert("報告するデータがありません"); return; }
@@ -502,7 +514,6 @@
         
         const scanLogs = timeline.filter(log => log.type === "SCAN");
 
-        // --- 巡回ごとのセッション自動切り分け（打刻間隔30分以上で次回の巡回とみなす） ---
         let sessions = [];
         let currentSession = [];
 
@@ -514,7 +525,6 @@
                 const prevTime = prevLog.timestamp || new Date(`${prevLog.date} ${prevLog.time.replace('(手)','')}`).getTime();
                 const currTime = log.timestamp || new Date(`${log.date} ${log.time.replace('(手)','')}`).getTime();
 
-                // 30分（1800000ミリ秒）以上空いていれば別セッションと判定
                 if (currTime - prevTime > 1800000) {
                     sessions.push(currentSession);
                     currentSession = [log];
@@ -525,10 +535,8 @@
         });
         if (currentSession.length > 0) sessions.push(currentSession);
 
-        // --- メール本文構築 ---
         let body = `${summaryStatus}\n報告送信日時: ${getTodayDateString()} ${getNowTimeString()}\n\n`;
         
-        // 1. 各巡回の実施時間サマリー表示
         body += "【巡回実施状況】\n";
         if (sessions.length > 0) {
             sessions.forEach((sess, idx) => {
@@ -543,7 +551,6 @@
         }
         body += "\n";
 
-        // 2. 詳細打刻履歴（これまで通り1列で時系列表示）
         body += "＜巡回QRコード 打刻履歴＞\n-----------------------\n";
         timeline.forEach(log => {
             if(log.type === "SCAN") {
